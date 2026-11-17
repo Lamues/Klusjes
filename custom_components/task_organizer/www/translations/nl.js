@@ -42,6 +42,7 @@ export const nl = {
     next: "Volgende",
     no_desc: "Geen beschrijving",
     no_history: "Er bestaat nog geen geschiedenis voor dit klusje",
+    no_task: "Geen klusjes om te tonen",
     onetime: "Eenmalig",
     override_overdue_days_placeholder: "bijv. 5",
     override_overdue_lbl: "Drempel voordat het 'te laat' is (days)",
