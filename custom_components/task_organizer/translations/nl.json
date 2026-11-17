@@ -1,1 +1,149 @@
-
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Klusjes-integratie instellen",
+        "description": "Wil je Klusjes-integratie instellen?"
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Slechts één instantie van de Klusjes-integratie is toegestaan"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Klusjes instellingen",
+        "data": {
+          "overdue_days": "Dagen tot klus te laat afgerond is",
+          "color_done": "Kleur: Afgerond (Hex-code)",
+          "point_goals": "Maandelijkse Punten Doelen",
+          "color_due": "Kleur: Nodig (Hex-code)",
+          "color_overdue": "Kleur: Te laat (Hex-code)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "all_tasks": { "name": "Alle klusjes" },
+      "due_tasks": { "name": "Klusjes die nodig zijn" },
+      "overdue_tasks": { "name": "Klusjes die te laat zijn" },
+      "due_and_overdue_tasks": { "name": "Actuele en te late klusjes" },
+      "settings": { "name": "Klusjes: Instellingen" },
+      "protocol": { "name": "Klusjes: Protocol" },
+      "points": { "name": "Punten" },
+      "leaderboard": { "name": "Huisgenoot van de maand" }, 
+      "entry_saved": { "name": "Registratie opgeslagen!" },
+      "entry_deleted": { "name": "Registratie verwijderd!" },
+      "success": { "name": "Instellingen opgeslagen!" },
+      "templates": { "name": "Sjabloon" }
+    },
+    "button": {
+      "reset_month": { "name": "Maand afsluiten" },
+      "factory_reset": { "name": "Terug naar fabrieksinstellingen" }
+    }
+  },
+  "services": {
+    "reset_monthly_points": {
+      "name": "Reset monthly points",
+      "description": "Manually resets all roommates' points to 0 and archives the month."
+    },
+    "factory_reset": {
+      "name": "Factory reset",
+      "description": "Deletes all tasks, history, and points."
+    },
+    "complete_task_by_name": {
+      "name": "Complete task",
+      "description": "Marks a task as completed by its exact name.",
+      "fields": {
+        "task_name": { "name": "Task Name", "description": "The exact name of the task." },
+        "user_id": { "name": "User (Optional)", "description": "The HA user ID or entity." }
+      }
+    },
+    "add_task": {
+      "name": "Add task",
+      "description": "Creates a new recurring or one-time task. Can be created from scratch or based on a template.",
+      "fields": {
+        "template": { "name": "Template (Optional)", "description": "The name of a template to use. Fills other fields if not provided." },
+        "name": { "name": "Name (Optional with template)", "description": "What should the task be named?" },
+        "description": { "name": "Description (Optional)", "description": "Additional information." },
+        "area": { "name": "Area (Optional)", "description": "In which room/area does the task occur?" },
+        "interval": { "name": "Interval (Days, Optional)", "description": "How often should the task be done? 0 for one-time tasks. If not set, the value from the template or default (7) is used." },
+        "complexity": { "name": "Points (1-10, Optional)", "description": "How many points is the task worth?" },
+        "icon": { "name": "Icon (Optional)", "description": "An mdi icon, e.g., mdi:broom" },
+        "assignees": { "name": "Assignees (Optional)", "description": "Comma-separated user IDs or person entities." },
+        "override_overdue_days": { "name": "Days until overdue (Optional)", "description": "Overrides the global setting for the number of days after which this task is considered overdue." },
+        "subtasks": { "name": "Subtasks (Optional)", "description": "A list of subtasks." }
+      }
+    },
+    "set_task_due_by_name": {
+      "name": "Set task due immediately",
+      "description": "Sets a task as due immediately by its exact name.",
+      "fields": {
+        "task_name": { "name": "Task Name", "description": "The exact name of the task." }
+      }
+    },
+    "pause_task_by_name": {
+      "name": "Pause task",
+      "description": "Pauses a task by its exact name until a specific date.",
+      "fields": {
+        "task_name": { "name": "Task Name", "description": "The exact name of the task." },
+        "pause_until": { "name": "Pause until", "description": "The date until which the task should be paused (e.g., '2024-12-31')." }
+      }
+    },
+    "remove_task_by_name": {
+      "name": "Remove task",
+      "description": "Removes a task by its exact name.",
+      "fields": {
+        "task_name": { "name": "Task Name", "description": "The exact name of the task to be removed." }
+      }
+    },
+    "edit_task_by_name": {
+      "name": "Edit task",
+      "description": "Edits an existing task by its exact name.",
+      "fields": {
+        "task_name": { "name": "Task Name", "description": "The exact name of the task to be edited." },
+        "new_name": { "name": "New Name (Optional)", "description": "The new name for the task." },
+        "description": { "name": "Description (Optional)", "description": "Additional information." },
+        "area": { "name": "Area (Optional)", "description": "In which room/area does the task occur?" },
+        "interval": { "name": "Interval (Days, Optional)", "description": "How often should the task be done?" },
+        "complexity": { "name": "Points (1-10, Optional)", "description": "How many points is the task worth?" },
+        "icon": { "name": "Icon (Optional)", "description": "An mdi icon, e.g., mdi:broom" },
+        "assignees": { "name": "Assignees (Optional)", "description": "Comma-separated user IDs or person entities." },
+        "override_overdue_days": { "name": "Days until overdue (Optional)", "description": "Overrides the global setting." },
+        "subtasks": { "name": "Subtasks (Optional)", "description": "The updated list of subtasks." }
+      }
+    },
+    "add_template": {
+      "name": "Create template",
+      "description": "Creates a new template.",
+      "fields": {
+        "name": { "name": "Name", "description": "What should the template be named?" },
+        "description": { "name": "Description (Optional)", "description": "Additional information." },
+        "area": { "name": "Area (Optional)", "description": "In which room/area does the task occur?" },
+        "interval": { "name": "Interval (Days, Optional)", "description": "How often should the task be done?" },
+        "complexity": { "name": "Points (1-10, Optional)", "description": "How many points is the task worth?" },
+        "icon": { "name": "Icon (Optional)", "description": "An mdi icon, e.g., mdi:broom" },
+        "assignees": { "name": "Assignees (Optional)", "description": "Comma-separated user IDs or person entities." },
+        "subtasks": { "name": "Subtasks (Optional)", "description": "Subtasks for this template." }
+      }
+    },
+    "remove_template_by_name": {
+      "name": "Remove template",
+      "description": "Removes a template by its exact name.",
+      "fields": {
+        "template_name": { "name": "Template Name", "description": "The exact name of the template to be removed." }
+      }
+    },
+    "edit_template_by_name": {
+      "name": "Edit template",
+      "description": "Edits an existing template by its exact name.",
+      "fields": {
+        "template_name": { "name": "Template Name", "description": "The exact name of the template to be edited." },
+        "new_name": { "name": "New Name (Optional)", "description": "The new name for the template." },
+        "subtasks": { "name": "Subtasks (Optional)", "description": "The updated list of subtasks." }
+      }
+    }
+  }
+}
