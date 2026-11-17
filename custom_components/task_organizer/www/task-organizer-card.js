@@ -2044,7 +2044,7 @@ class TaskOrganizerCard extends HTMLElement {
     let html = `<div class="task-list">`;
 
     if (taskArray.length === 0) {
-      html += `<div style="text-align: center; color: var(--secondary-text-color); padding: 16px;">${this.localize('no_tasks')}</div>`;
+      html += `<div style="text-align: center; color: var(--secondary-text-color); padding: 10px;">${this.localize('no_tasks')}</div>`;
     }
     
     paginatedTasks.forEach(task => {
