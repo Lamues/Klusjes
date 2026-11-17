@@ -42,6 +42,7 @@ export const en = {
     next: "Next",
     no_desc: "No Description",
     no_history: "No history for this task yet",
+    no_tasks: "No tasks to show",
     onetime: "One-time",
     override_overdue_days_placeholder: "e.g. 5",
     override_overdue_lbl: "Overdue Threshold (Days)",
