@@ -29,7 +29,7 @@ export const nl = {
     height_lbl: "Hoogte",
     help_link: "Help",
     icon_lbl: "Icoon",
-    in_days: "in {dagen} dagen",
+    in_days: "in {days} dagen",
     interval_lbl: "Dagen (tussenpose)",
     items_per_page_lbl: "Items per pagina",
     kanban_completed: "Afgerond",
