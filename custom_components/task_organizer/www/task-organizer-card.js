@@ -2043,6 +2043,10 @@ class TaskOrganizerCard extends HTMLElement {
 
     let html = `<div class="task-list">`;
 
+    if (taskArray.length === 0) {
+      html += `<div style="text-align: center; color: var(--secondary-text-color); padding: 16px;">${this.localize('no_tasks')}</div>`;
+    }
+    
     paginatedTasks.forEach(task => {
       const d = new Date(task.due_date); 
       d.setHours(0,0,0,0);
