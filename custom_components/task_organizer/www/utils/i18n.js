@@ -1,8 +1,9 @@
 const _v = Date.now();
 const { en } = await import(`../translations/en.js?v=${_v}`);
 const { de } = await import(`../translations/de.js?v=${_v}`);
+const { nl } = await import(`../translations/nl.js?v=${_v}`);
 
-const TRANSLATIONS = { en, de };
+const TRANSLATIONS = { en, de, nl };
 
 /**
  * Translates a given key based on the Home Assistant language.
