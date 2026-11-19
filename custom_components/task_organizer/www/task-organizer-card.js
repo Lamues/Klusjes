@@ -509,7 +509,8 @@ class TaskOrganizerCard extends HTMLElement {
   _proceedToAssigneeCheck(taskId) {
     const task = this.tasks[taskId];
     const currentUserId = this._hass.user?.id;
-    const assignees = getEffectiveAssignees(task);
+    let assignees = task.assignees || [];
+    if (typeof assignees === 'string') assignees = [assignees];
 
     // Only skip the dialog if the task is assigned EXCLUSIVELY to the current user
     const isOnlyMe = assignees.length === 1 && assignees[0] === currentUserId;
