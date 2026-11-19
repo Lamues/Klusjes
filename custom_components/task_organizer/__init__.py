@@ -59,6 +59,8 @@ from .const import (
     SERVICE_EDIT_TEMPLATE_BY_NAME,
 )
 
+from .rotation import advance_assignee, get_effective_assignees
+
 # Global logger for the integration
 _LOGGER = logging.getLogger(__name__)
 
@@ -287,6 +289,11 @@ async def _async_complete_task_internal(hass: HomeAssistant, task_id: str, compl
         data["history"].insert(0, history_entry)
     
     interval = task.get("interval", 7)
+
+    # Rotate the responsible assignee (or hold it if someone else did the work)
+    if interval > 0:
+        if advance_assignee(task, users_with_points, total_points):
+            _LOGGER.debug("Task '%s': rotation halted, assignee keeps the task", task.get("name"))
     
     if interval > 0:
         await _log_audit_event(hass, task_id, "completed", user_id=completed_by[0] if completed_by else None, details={"points": total_points, "users_with_points": users_with_points})
@@ -1010,7 +1017,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
             
         task = data["tasks"][target_task_id]
-        completed_by = [target_uid] if target_uid else task.get("assignees", [])
+        completed_by = [target_uid] if target_uid else get_effective_assignees(task)
         
         if not completed_by: 
             return
@@ -1035,6 +1042,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             }
             data["history"].insert(0, history_entry)
         
+        advance_assignee(task, {u_id: points_per_user for u_id in completed_by}, total_points)
+
         interval = task.get("interval", 1)
         task["due_date"] = (dt_util.utcnow() + timedelta(days=interval)).isoformat()
         task["paused_until"] = None 

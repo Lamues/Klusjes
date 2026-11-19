@@ -1,5 +1,6 @@
 const _v = new URLSearchParams(import.meta.url.split('?')[1]).get('v') || Date.now();
 const { localize, renderCheckbox } = await import(`./utils/i18n.js?v=${_v}`);
+const { getEffectiveAssignees } = await import(`./utils/assignees.js?v=${_v}`);
 await import(`./modals/choice-modal.js?v=${_v}`);
 await import(`./modals/subtask-modal.js?v=${_v}`);
 await import(`./modals/task-modal.js?v=${_v}`);
@@ -191,8 +192,7 @@ class TaskOrganizerKanban extends HTMLElement {
   _proceedToAssigneeCheck(taskId) {
     const task = this.tasks[taskId];
     const currentUserId = this._hass.user?.id;
-    let assignees = task.assignees || [];
-    if (typeof assignees === 'string') assignees = [assignees];
+    const assignees = getEffectiveAssignees(task);
 
     const isOnlyMe = assignees.length === 1 && assignees[0] === currentUserId;
 
@@ -577,8 +577,9 @@ class TaskOrganizerKanban extends HTMLElement {
             ? task.override_overdue_days : this.settings.overdue_days;
         const overdueDiff = -overdueThreshold;
 
-        const isCurrentUser = task.assignees && task.assignees.includes(currentUserId);
-        const isAssigned = task.assignees && task.assignees.length > 0;
+        const effectiveAssignees = getEffectiveAssignees(task);
+        const isCurrentUser = effectiveAssignees.includes(currentUserId);
+        const isAssigned = effectiveAssignees.length > 0;
         const isOnetime = task.interval === 0;
         const isDone = !isPaused && diff > 0;
         const isDue = !isPaused && diff <= 0 && diff > overdueDiff;
@@ -657,8 +658,10 @@ class TaskOrganizerKanban extends HTMLElement {
             let cmp = 0;
             if (sortBy === 'points') cmp = a.complexity - b.complexity;
             else if (sortBy === 'assignee') {
-                const aName = (a.assignees && a.assignees.length > 0) ? (this.users[a.assignees[0]] || 'z') : 'z';
-                const bName = (b.assignees && b.assignees.length > 0) ? (this.users[b.assignees[0]] || 'z') : 'z';
+                const aFirst = getEffectiveAssignees(a)[0];
+                const bFirst = getEffectiveAssignees(b)[0];
+                const aName = aFirst ? (this.users[aFirst] || 'z') : 'z';
+                const bName = bFirst ? (this.users[bFirst] || 'z') : 'z';
                 cmp = aName.localeCompare(bName);
             } 
             else if (sortBy === 'alphabet') cmp = a.name.localeCompare(b.name);
@@ -749,7 +752,7 @@ class TaskOrganizerKanban extends HTMLElement {
         areaName = this._hass.areas[task.area].name;
     }
 
-    let assigneesList = Array.isArray(task.assignees) ? task.assignees : (task.assignees ? [task.assignees] : []);
+    let assigneesList = getEffectiveAssignees(task);
     const assigneeHtml = assigneesList.map(uid => `
         <div class="mini-avatar" title="${this.users[uid] || this.localize('unknown')}">
             ${(this.users[uid] || '?').charAt(0).toUpperCase()}
