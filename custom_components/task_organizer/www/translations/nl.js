@@ -87,7 +87,7 @@ export const nl = {
     unknown: "Onbekend",
     who_did_it: "Wie heeft het afgerond?",
     width_lbl: "Breedte",
-    zoom_lbl: "Kanban Zoom"
+    zoom_lbl: "Kanban Zoom",
     repeat_mode_lbl: "Herhaling",
     repeat_interval: "Elke X dagen na afronden",
     repeat_weekly: "Wekelijks, op een weekdag",
@@ -98,7 +98,7 @@ export const nl = {
     day_of_month_lbl: "Dag van de maand",
     day_of_month_hint: "Gebruik 31 voor de laatste dag van de maand (kortere maanden gebruiken hun laatste dag).",
     month_lbl: "Maand",
-    quarter_months_lbl: "Maanden van het kwartaal",
+    quarter_months_lbl: "Maanden van het kwartaal"
   },
   leaderboard: {
     all_time: "Allertijden",
