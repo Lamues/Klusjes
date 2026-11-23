@@ -715,7 +715,7 @@ class TaskOrganizerSettings extends HTMLElement {
       <style> 
         :host { display: block; width: ${width}; margin: 0 auto; } * { box-sizing: border-box; } 
         ha-card { padding: 16px; display: flex; flex-direction: column; gap: 12px; height: ${height}; overflow-y: auto; } 
-        .header { font-size: 20px; font-weight: bold; margin-bottom: 10px; } 
+        .header { font-size: 14px; font-weight: 500; line-height: 1.3; color: var(--ha-card-header-color, var(--secondary-text-color)); margin-bottom: 10px; } 
         .setting-row { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--card-background-color); border-radius: 8px; border: 1px solid var(--divider-color); box-shadow: var(--ha-card-box-shadow, 0 2px 2px rgba(0,0,0,0.1)); margin-bottom: 8px; } 
         .setting-label { font-weight: bold; font-size: 14px; color: var(--primary-text-color); } 
         .section-card { background: var(--card-background-color); border-radius: 8px; border: 1px solid var(--divider-color); box-shadow: var(--ha-card-box-shadow, 0 2px 2px rgba(0,0,0,0.1)); margin-bottom: 12px; padding: 12px; width: 100%; box-sizing: border-box; }

@@ -314,7 +314,7 @@ class TaskOrganizerKanban extends HTMLElement {
             box-sizing: border-box;
           }
           .kanban-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-shrink: 0; flex-wrap: wrap; gap: 8px; }
-          .kanban-title { font-size: 20px; font-weight: bold; color: var(--primary-text-color); }
+          .kanban-title { font-size: 14px; font-weight: 500; line-height: 1.3; color: var(--ha-card-header-color, var(--secondary-text-color)); }
           
           .kanban-board {
             display: flex;

@@ -272,7 +272,7 @@ class TaskOrganizerStats extends HTMLElement {
         ha-card { padding: 8px 12px 2px 12px; display: flex; flex-direction: column; width: 100%; height: ${height}; overflow-x: hidden; overflow-y: auto; min-height: 100px;} 
         
         .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-        .header { font-size: 20px; font-weight: bold; color: var(--primary-text-color); } 
+        .header { font-size: 14px; font-weight: 500; line-height: 1.3; color: var(--ha-card-header-color, var(--secondary-text-color)); } 
         
         .hist-list { display: flex; flex-direction: column; gap: 10px; width: 100%; } 
         .hist-item { display: flex; align-items: center; justify-content: space-between; background: var(--card-background-color); padding: 12px; border-radius: 8px; border: 1px solid var(--divider-color); transition: transform 0.2s; min-height: 75px; box-sizing: border-box; } 
