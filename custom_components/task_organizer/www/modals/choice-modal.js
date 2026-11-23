@@ -1,5 +1,6 @@
 const _v = new URLSearchParams(import.meta.url.split('?')[1]).get('v') || Date.now();
 const { localize } = await import(`../utils/i18n.js?v=${_v}`);
+const { getEffectiveAssignees, isPointExcludedUser } = await import(`../utils/assignees.js?v=${_v}`);
 
 export class TaskOrganizerChoiceModal extends HTMLElement {
   constructor() {
@@ -28,13 +29,21 @@ export class TaskOrganizerChoiceModal extends HTMLElement {
     const currentUserId = this._hass.user?.id;
     const taskAssignees = Array.isArray(task.assignees) ? task.assignees : [];
     
+    // Users that can never be awarded points (e.g. the wall tablets) are not offered at all
     this._activeUids = Object.keys(this._users).filter(uid => 
-        taskAssignees.length === 0 || taskAssignees.includes(uid) || uid === currentUserId
+        !isPointExcludedUser(this._users[uid]) &&
+        (taskAssignees.length === 0 || taskAssignees.includes(uid) || uid === currentUserId)
     );
+
+    // Start with 100% for whoever checks the task off. If that user cannot get points
+    // (wall tablet), start with the person the task is currently assigned to.
+    const defaultUid = this._activeUids.includes(currentUserId)
+        ? currentUserId
+        : (getEffectiveAssignees(task).find(uid => this._activeUids.includes(uid)) || this._activeUids[0]);
 
     this._distribution = {};
     this._activeUids.forEach(uid => { 
-        this._distribution[uid] = (uid === currentUserId) ? 100 : 0; 
+        this._distribution[uid] = (uid === defaultUid) ? 100 : 0; 
     });
 
     this._render();
@@ -116,7 +125,7 @@ export class TaskOrganizerChoiceModal extends HTMLElement {
         const pts = ((this._distribution[uid] / 100) * (this._task.complexity || 5)).toFixed(1);
         const pct = this._distribution[uid].toFixed(1);
         
-        const pctPtsSpan = listItems[i].querySelector('.dist-pct-pts');
+        const pctPtsSpan = listItems[i].querySelector('.pts-live');
         if (pctPtsSpan) pctPtsSpan.textContent = `${pts} ${this.localize('points')}`;
 
         const slider = listItems[i].querySelector('.user-dist-slider');
@@ -187,7 +196,10 @@ export class TaskOrganizerChoiceModal extends HTMLElement {
         <div class="dist-row" style="display:flex; align-items:flex-start; gap:12px; padding: 8px 0; border-bottom: 1px solid var(--divider-color);">
             <div style="display:flex; flex-direction:column; flex:1; min-width:0;">
                 <span style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this._users[uid]}</span>
-                <span class="dist-pct-pts" style="font-size: 11px; color: var(--secondary-text-color);">${pts} ${this.localize('points')}</span>
+                <span class="dist-pct-pts" style="display: inline-grid; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--secondary-text-color);">
+                    <span class="pts-live" style="grid-area: 1 / 1; white-space: nowrap;">${pts} ${this.localize('points')}</span>
+                    <span aria-hidden="true" style="grid-area: 1 / 1; visibility: hidden; white-space: nowrap;">88.8 ${this.localize('points')}</span>
+                </span>
             </div>
             <input type="range" class="user-dist-slider" data-uid="${uid}" min="0" max="100" step="${pointStepPct}" value="${pct}" style="flex:1.5; height:8px; cursor:pointer; margin-top: 6px;">
             <ha-button appearance="plain" variant="brand" class="dist-btn" data-preset="100" data-uid="${uid}" style="--mdc-typography-button-font-size: 9px; height: 22px; min-width: 90px; margin-top: -5px;">${this.localize('assign_all')}</ha-button>
@@ -242,11 +254,8 @@ export class TaskOrganizerChoiceModal extends HTMLElement {
     }));
 
     let hx = cx, hy = cy;
-    const currentUserId = this._hass.user?.id;
-    if (this._distribution[currentUserId] === 100) {
-        const idx = this._activeUids.indexOf(currentUserId);
-        hx = vertices[idx].x; hy = vertices[idx].y;
-    }
+    const fullIdx = this._activeUids.findIndex(uid => this._distribution[uid] === 100);
+    if (fullIdx >= 0) { hx = vertices[fullIdx].x; hy = vertices[fullIdx].y; }
 
     const polyPath = vertices.map(v => `${v.x},${v.y}`).join(' ');
     container.innerHTML = ` 

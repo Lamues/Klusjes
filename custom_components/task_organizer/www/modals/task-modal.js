@@ -1,5 +1,6 @@
 const _v = new URLSearchParams(import.meta.url.split('?')[1]).get('v') || Date.now();
 const { localize, renderCheckbox, renderSwitch } = await import(`../utils/i18n.js?v=${_v}`);
+const { nextOccurrence, toYMD } = await import(`../utils/schedule.js?v=${_v}`);
 
 export class TaskOrganizerTaskModal extends HTMLElement {
   constructor() {
@@ -58,6 +59,7 @@ export class TaskOrganizerTaskModal extends HTMLElement {
             cb.checked = t.assignees && t.assignees.includes(cb.value);
         });
         
+        this._loadScheduleIntoForm(t.schedule);
         this._updateTaskTypeUI(isOnetime);
         this.shadowRoot.getElementById('template-suggestions').style.display = 'none';
         
@@ -107,6 +109,7 @@ export class TaskOrganizerTaskModal extends HTMLElement {
         this._subtasks = [];
         this._previousInterval = 7;
         
+        this._loadScheduleIntoForm(null);
         this._updateTaskTypeUI(false); 
         this.shadowRoot.getElementById('template-suggestions').style.display = 'block';
         this.shadowRoot.getElementById('template-suggestions').innerHTML = '';
@@ -207,6 +210,102 @@ export class TaskOrganizerTaskModal extends HTMLElement {
     this.shadowRoot.getElementById('task-modal').classList.remove('open');
   }
 
+  /** Locale used for weekday and month names. */
+  _scheduleLocale() {
+    return this._hass?.language || 'en';
+  }
+
+  /** <option> list with the seven weekdays, Monday (0) first. */
+  _weekdayOptionsHtml() {
+    const lang = this._scheduleLocale();
+    // 1 January 2024 was a Monday
+    return Array.from({ length: 7 }, (_, i) => {
+      const name = new Date(2024, 0, 1 + i).toLocaleDateString(lang, { weekday: 'long' });
+      return `<option value="${i}">${name}</option>`;
+    }).join('');
+  }
+
+  /** Fills the month select: all 12 months for yearly, three month groups for quarterly. */
+  _fillScheduleMonthOptions(type) {
+    const select = this.shadowRoot.getElementById('f-schedule-month');
+    const label = this.shadowRoot.getElementById('f-schedule-month-label');
+    if (!select) return;
+    const lang = this._scheduleLocale();
+    const monthName = (m, style) => new Date(2024, m - 1, 1).toLocaleDateString(lang, { month: style });
+    if (type === 'quarterly') {
+      select.innerHTML = [1, 2, 3].map(k =>
+        `<option value="${k}">${[k, k + 3, k + 6, k + 9].map(m => monthName(m, 'short')).join(' / ')}</option>`
+      ).join('');
+      if (label) label.textContent = this.localize('quarter_months_lbl');
+    } else {
+      select.innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${monthName(i + 1, 'long')}</option>`).join('');
+      if (label) label.textContent = this.localize('month_lbl');
+    }
+  }
+
+  /** Puts a stored schedule (or none) into the form controls. */
+  _loadScheduleIntoForm(schedule) {
+    const type = schedule?.type || 'interval';
+    const typeSelect = this.shadowRoot.getElementById('f-schedule-type');
+    if (!typeSelect) return;
+    typeSelect.value = type;
+    this._fillScheduleMonthOptions(type);
+    this.shadowRoot.getElementById('f-schedule-weekday').value = String(schedule?.weekday ?? 0);
+    this.shadowRoot.getElementById('f-schedule-month').value = String(schedule?.month ?? 1);
+    this.shadowRoot.getElementById('f-schedule-day').value = schedule?.day ?? 1;
+    this._refreshScheduleUI();
+  }
+
+  /** Reads the form into a schedule object, or null when the plain interval is used. */
+  _readSchedule() {
+    const type = this.shadowRoot.getElementById('f-schedule-type')?.value || 'interval';
+    if (type === 'interval') return null;
+    if (type === 'weekly') {
+      return { type, weekday: parseInt(this.shadowRoot.getElementById('f-schedule-weekday').value) || 0 };
+    }
+    const day = Math.min(31, Math.max(1, parseInt(this.shadowRoot.getElementById('f-schedule-day').value) || 1));
+    if (type === 'monthly') return { type, day };
+    return { type, day, month: parseInt(this.shadowRoot.getElementById('f-schedule-month').value) || 1 };
+  }
+
+  /** Shows only the controls that belong to the chosen repeat mode. */
+  _refreshScheduleUI() {
+    const type = this.shadowRoot.getElementById('f-schedule-type')?.value || 'interval';
+    const show = (id, visible) => {
+      const el = this.shadowRoot.getElementById(id);
+      if (el) el.style.display = visible ? '' : 'none';
+    };
+    show('f-schedule-block', !this._isOnetime);
+    show('f-schedule-weekday-row', type === 'weekly');
+    show('f-schedule-month-row', type === 'quarterly' || type === 'yearly');
+    show('f-schedule-day-row', type === 'monthly' || type === 'quarterly' || type === 'yearly');
+
+    // With a fixed schedule the "days" field is not used. Its value is kept for switching back.
+    const intervalField = this.shadowRoot.getElementById('f-interval');
+    if (intervalField && !this._isOnetime) intervalField.disabled = (type !== 'interval');
+  }
+
+  /**
+   * Called when a schedule control changes: updates the visible controls and
+   * previews the first due date in the "due date" field of the time tab.
+   */
+  _onScheduleChanged(e) {
+    const type = this.shadowRoot.getElementById('f-schedule-type')?.value || 'interval';
+    if (e?.target?.id === 'f-schedule-type') this._fillScheduleMonthOptions(type);
+    this._refreshScheduleUI();
+
+    const schedule = this._readSchedule();
+    if (!schedule) return;
+    const next = nextOccurrence(schedule, new Date(), true);
+    const dueCb = this.shadowRoot.getElementById('f-set-due-date-cb');
+    const dueInput = this.shadowRoot.getElementById('f-custom-due-date');
+    if (next && dueCb && dueInput) {
+      dueCb.checked = true;
+      dueInput.value = toYMD(next);
+      dueInput.style.display = '';
+    }
+  }
+
   /**
    * Updates the UI elements based on whether the task is one-time or recurring.
    * Preserves previous interval value when toggling back to recurring.
@@ -241,6 +340,7 @@ export class TaskOrganizerTaskModal extends HTMLElement {
         if (btnRecurring) btnRecurring.classList.add('active');
         if (selector) selector.setAttribute('data-active', 'recurring');
     }
+    this._refreshScheduleUI();
   }
 
   _handleTemplateSuggestions(e) {
@@ -700,6 +800,7 @@ export class TaskOrganizerTaskModal extends HTMLElement {
       description: this.shadowRoot.getElementById('f-description')?.value || "",
       area: this.shadowRoot.getElementById('f-area')?.value || "",
       interval: isOnetime ? 0 : Math.max(1, parseInt(this.shadowRoot.getElementById('f-interval')?.value) || 7),
+      schedule: isOnetime ? null : this._readSchedule(),
       complexity: parseInt(this.shadowRoot.getElementById('f-complexity')?.value) || 5, 
       icon: this.shadowRoot.getElementById('f-icon-picker')?.value || "mdi:broom",
       category: "Allgemein", 
@@ -774,6 +875,8 @@ export class TaskOrganizerTaskModal extends HTMLElement {
         .modal-footer-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
         .btn-danger { color: var(--error-color, #F44336) !important; --mdc-theme-primary: var(--error-color, #F44336); }
         .btn-danger ha-icon { --mdc-icon-size: 18px; margin-right: 4px; }
+        .native-select { width: 100%; height: 56px; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--divider-color); border-radius: 4px; background: transparent; color: var(--primary-text-color); font-size: 16px; font-family: inherit; }
+        .native-select option { background: var(--card-background-color); color: var(--primary-text-color); }
       </style>
       <div id="task-modal" class="modal">
           <div class="modal-content">
@@ -829,6 +932,31 @@ export class TaskOrganizerTaskModal extends HTMLElement {
                   <div class="form-row">
                       <ha-input id="f-interval" type="number" min="0" label="${this.localize('interval_lbl')}" class="form-col"></ha-input>
                       <ha-input id="f-complexity" type="number" label="${this.localize('points_lbl')}" min="1" max="10" class="form-col"></ha-input>
+                  </div>
+
+                  <div id="f-schedule-block" style="display:flex; flex-direction:column; gap:12px;">
+                      <div>
+                          <label class="form-label">${this.localize('repeat_mode_lbl')}</label>
+                          <select id="f-schedule-type" class="native-select">
+                              <option value="interval">${this.localize('repeat_interval')}</option>
+                              <option value="weekly">${this.localize('repeat_weekly')}</option>
+                              <option value="monthly">${this.localize('repeat_monthly')}</option>
+                              <option value="quarterly">${this.localize('repeat_quarterly')}</option>
+                              <option value="yearly">${this.localize('repeat_yearly')}</option>
+                          </select>
+                      </div>
+                      <div id="f-schedule-weekday-row" style="display:none;">
+                          <label class="form-label">${this.localize('weekday_lbl')}</label>
+                          <select id="f-schedule-weekday" class="native-select">${this._weekdayOptionsHtml()}</select>
+                      </div>
+                      <div id="f-schedule-month-row" style="display:none;">
+                          <label class="form-label" id="f-schedule-month-label"></label>
+                          <select id="f-schedule-month" class="native-select"></select>
+                      </div>
+                      <div id="f-schedule-day-row" style="display:none;">
+                          <ha-input id="f-schedule-day" type="number" min="1" max="31" label="${this.localize('day_of_month_lbl')}" style="width:100%;"></ha-input>
+                          <div style="font-size:12px; color: var(--secondary-text-color); margin-top:4px;">${this.localize('day_of_month_hint')}</div>
+                      </div>
                   </div>
 
                   <div class="form-row">
@@ -1072,6 +1200,10 @@ export class TaskOrganizerTaskModal extends HTMLElement {
             }
         });
     }
+    ['f-schedule-type', 'f-schedule-weekday', 'f-schedule-month'].forEach(id => {
+        this.shadowRoot.getElementById(id)?.addEventListener('change', (e) => this._onScheduleChanged(e));
+    });
+    this.shadowRoot.getElementById('f-schedule-day')?.addEventListener('input', (e) => this._onScheduleChanged(e));
     const deleteBtn = this.shadowRoot.getElementById('btn-modal-delete');
     if (deleteBtn) {
         deleteBtn.addEventListener('click', () => this._deleteTask());

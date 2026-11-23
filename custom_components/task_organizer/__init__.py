@@ -60,6 +60,14 @@ from .const import (
 )
 
 from .rotation import advance_assignee, get_effective_assignees
+from .schedule import (
+    compute_next_due,
+    date_string_to_due_iso,
+    describe_schedule,
+    first_due_iso,
+    normalize_schedule,
+)
+from .exclusions import async_get_excluded_user_ids
 
 # Global logger for the integration
 _LOGGER = logging.getLogger(__name__)
@@ -264,6 +272,15 @@ async def _async_complete_task_internal(hass: HomeAssistant, task_id: str, compl
     
     old_points = data["points"].copy()
 
+    # Users that can never be awarded points (e.g. the wall tablets)
+    excluded_users = await async_get_excluded_user_ids(hass)
+    if excluded_users:
+        completed_by = [u for u in completed_by if u not in excluded_users]
+        if points_distribution:
+            points_distribution = {u: p for u, p in points_distribution.items() if u not in excluded_users}
+        if not completed_by and not points_distribution:
+            completed_by = [u for u in get_effective_assignees(task) if u not in excluded_users]
+
     # Create mapping for users receiving points (either from distribution or fair share)
     users_with_points = {}
     if points_distribution:
@@ -300,7 +317,7 @@ async def _async_complete_task_internal(hass: HomeAssistant, task_id: str, compl
         
     # If recurring, update due date. If one-time, it will be deleted.
     if interval > 0:
-        task["due_date"] = (dt_util.utcnow() + timedelta(days=interval)).isoformat()
+        task["due_date"] = compute_next_due(task) or (dt_util.utcnow() + timedelta(days=interval)).isoformat()
         task["paused_until"] = None
         
         # Reset subtasks for recurring tasks
@@ -375,6 +392,7 @@ async def ws_complete_task(hass: HomeAssistant, connection: websocket_api.Active
     vol.Required("complexity"): vol.All(int, vol.Range(min=1, max=10)),
     vol.Required("category"): str, 
     vol.Required("icon"): str,
+    vol.Optional("schedule"): vol.Any(dict, None),
     vol.Optional("custom_due_date"): vol.Any(str, None),
     vol.Optional("paused_until"): vol.Any(str, None),
     vol.Optional("override_overdue_days"): vol.Any(vol.All(int, vol.Range(min=0, max=9999)), None),
@@ -393,9 +411,15 @@ async def ws_add_task(hass: HomeAssistant, connection: websocket_api.ActiveConne
     """
     data = hass.data[DOMAIN]["data"]
     task_id = str(uuid.uuid4())
+    schedule = normalize_schedule(msg.get("schedule")) if msg["interval"] > 0 else None
     custom_due_date_str = msg.get("custom_due_date")
     if custom_due_date_str: # Ensure datetime is imported for fromisoformat
-        due_date = datetime.fromisoformat(custom_due_date_str).isoformat() 
+        due_date = (
+            (date_string_to_due_iso(custom_due_date_str) if schedule else None)
+            or datetime.fromisoformat(custom_due_date_str).isoformat()
+        )
+    elif schedule:
+        due_date = first_due_iso(schedule) # Next scheduled day, today included
     else:
         due_date = dt_util.utcnow().isoformat() # Default if no custom date is provided
     
@@ -405,6 +429,7 @@ async def ws_add_task(hass: HomeAssistant, connection: websocket_api.ActiveConne
         "description": msg.get("description", ""),
         "area": msg.get("area", ""),
         "interval": msg["interval"],
+        "schedule": schedule,
         "assignees": msg.get("assignees", []), 
         "complexity": msg["complexity"],
         "category": msg["category"], 
@@ -436,6 +461,7 @@ async def ws_add_task(hass: HomeAssistant, connection: websocket_api.ActiveConne
     vol.Optional("complexity"): vol.All(int, vol.Range(min=1, max=10)),
     vol.Optional("category"): str, 
     vol.Optional("icon"): str,
+    vol.Optional("schedule"): vol.Any(dict, None),
     vol.Optional("custom_due_date"): vol.Any(str, None),
     vol.Optional("paused_until"): vol.Any(str, None),
     vol.Optional("override_overdue_days"): vol.Any(vol.All(int, vol.Range(min=0, max=9999)), None),
@@ -486,8 +512,21 @@ async def ws_edit_task(hass: HomeAssistant, connection: websocket_api.ActiveConn
                                 
             task_ref[key] = msg[key]
 
+    if "schedule" in msg:
+        task_ref["schedule"] = normalize_schedule(msg["schedule"]) if task_ref.get("interval", 0) > 0 else None
+
     if msg.get("custom_due_date"):
-        task_ref["due_date"] = dt_util.as_utc(dt_util.parse_datetime(msg["custom_due_date"])).isoformat()
+        custom_due = msg["custom_due_date"]
+        if task_ref.get("schedule"):
+            # The edit form always sends the current due date back, so only treat it as a
+            # change when another day was picked. Scheduled dates are stored at noon local time.
+            if custom_due[:10] != str(original_task.get("due_date") or "")[:10]:
+                task_ref["due_date"] = (
+                    date_string_to_due_iso(custom_due)
+                    or dt_util.as_utc(dt_util.parse_datetime(custom_due)).isoformat()
+                )
+        else:
+            task_ref["due_date"] = dt_util.as_utc(dt_util.parse_datetime(custom_due)).isoformat()
         
     if "paused_until" in msg:
         task_ref["paused_until"] = msg["paused_until"]
@@ -523,7 +562,10 @@ async def ws_edit_task(hass: HomeAssistant, connection: websocket_api.ActiveConn
                 today_str = dt_util.now().strftime("%Y-%m-%d")
                 if isinstance(old_v, str) and old_v[:10] < today_str:
                     continue
-            changed_keys[k] = {"old": old_v, "new": v}
+            if k == "schedule":
+                changed_keys[k] = {"old": describe_schedule(old_v), "new": describe_schedule(v)}
+            else:
+                changed_keys[k] = {"old": old_v, "new": v}
 
     if changed_keys:
         await _log_audit_event(hass, task_id, "edited", user_id=connection.user.id, details={"changes": changed_keys})
@@ -1018,6 +1060,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             
         task = data["tasks"][target_task_id]
         completed_by = [target_uid] if target_uid else get_effective_assignees(task)
+
+        # Users that can never be awarded points (e.g. the wall tablets)
+        excluded_users = await async_get_excluded_user_ids(hass)
+        if excluded_users:
+            completed_by = (
+                [u for u in completed_by if u not in excluded_users]
+                or [u for u in get_effective_assignees(task) if u not in excluded_users]
+            )
         
         if not completed_by: 
             return
@@ -1045,7 +1095,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         advance_assignee(task, {u_id: points_per_user for u_id in completed_by}, total_points)
 
         interval = task.get("interval", 1)
-        task["due_date"] = (dt_util.utcnow() + timedelta(days=interval)).isoformat()
+        task["due_date"] = compute_next_due(task) or (dt_util.utcnow() + timedelta(days=interval)).isoformat()
         task["paused_until"] = None 
         
         # Reset subtasks for recurring tasks

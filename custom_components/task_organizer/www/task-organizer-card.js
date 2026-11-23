@@ -26,6 +26,7 @@ class TaskOrganizerCard extends HTMLElement {
     this.tasks = {}; 
     this.templates = {};
     this.users = {};
+    this.userPictures = {};
     
     // Default colors: Green, Yellow/Orange, Red
     this.settings = { 
@@ -193,15 +194,18 @@ class TaskOrganizerCard extends HTMLElement {
    */
   _mapUsers() {
     const users = {};
+    const pictures = {};
     for (const entityId in this._hass.states) {
       if (entityId.startsWith('person.')) {
         const state = this._hass.states[entityId];
         if (state.attributes.user_id) {
             users[state.attributes.user_id] = state.attributes.friendly_name || entityId;
+            if (state.attributes.entity_picture) pictures[state.attributes.user_id] = state.attributes.entity_picture;
         }
       }
     }
     this.users = users;
+    this.userPictures = pictures;
   }
 
   /**
@@ -1525,8 +1529,8 @@ class TaskOrganizerCard extends HTMLElement {
           :host { display: block; width: ${width}; margin: 0 auto; } 
           ha-card { width: 100%; height: ${height}; padding: 16px; display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; position: relative; min-height: 100px; } 
           
-          .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; } 
-          .header span { font-size: 20px; font-weight: bold; color: var(--primary-text-color); } 
+          .header { display: flex; justify-content: space-between; align-items: center; margin: 0 0 15px 0; padding: 0; } 
+          .header span { font: inherit; color: inherit; } 
           .header-actions { display: flex; gap: 8px; align-items: center; }
           
           .icon-button { background: transparent; border: none; cursor: pointer; color: var(--primary-text-color); border-radius: 50%; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; transition: background-color 0.2s, transform 0.1s; }
@@ -1547,17 +1551,20 @@ class TaskOrganizerCard extends HTMLElement {
           .task-item:hover { background-color: color-mix(in srgb, var(--status-color), transparent var(--status-transparency-hover, 85%)); transform: translateX(2px); box-shadow: -2px 4px 8px rgba(0,0,0,0.1); } 
           .task-info { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; color: var(--primary-text-color); } 
           .task-text { flex: 1; min-width: 0; word-break: break-word; text-align: left; } 
-          .task-title { font-weight: bold; margin: 0; font-size: 15px; display: flex; align-items: center; gap: 4px; cursor: help; overflow: hidden; } 
+          .task-title { color: var(--primary-text-color); font-weight: bold; margin: 0; font-size: 15px; display: flex; align-items: center; gap: 4px; cursor: help; overflow: hidden; } 
           .task-title span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .task-meta { font-size: 12px; color: var(--secondary-text-color); margin-top: 2px; } 
           
           .assignees-icons { display: flex; margin-top: 6px; gap: 4px; } 
-          .mini-avatar { width: 22px; height: 22px; border-radius: 50%; background: var(--secondary-text-color); color: white; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; text-transform: uppercase; box-shadow: 0 1px 3px rgba(0,0,0,0.2); cursor: help; } 
+          .mini-avatar { position: relative; overflow: hidden; width: 22px; height: 22px; border-radius: 50%; background: var(--secondary-text-color); color: white; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; text-transform: uppercase; box-shadow: 0 1px 3px rgba(0,0,0,0.2); cursor: help; } 
           
+          .mini-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
           .actions { display: flex; gap: 4px; flex-shrink: 0; } 
           .action-btn { background: transparent; border: none; padding: 8px; border-radius: 50%; cursor: pointer; color: var(--secondary-text-color); transition: background-color 0.2s, color 0.2s; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; }
           .action-btn:hover { background-color: var(--secondary-background-color); color: var(--primary-text-color); }
-          .btn-complete { color: var(--success-color, #4CAF50); } 
+          .btn-complete { box-sizing: border-box; border: 2px solid currentColor; color: var(--primary-text-color); }
+          .btn-complete:active { color: var(--success-color, #4CAF50); background-color: color-mix(in srgb, var(--success-color, #4CAF50) 12%, transparent); }
+          @media (hover: hover) { .btn-complete:hover { color: var(--success-color, #4CAF50); background-color: color-mix(in srgb, var(--success-color, #4CAF50) 12%, transparent); } } 
           .btn-edit { color: var(--info-color, #2196F3); } 
           .btn-delete { color: var(--error-color, #F44336); } 
           
@@ -1640,7 +1647,7 @@ class TaskOrganizerCard extends HTMLElement {
     let html = this._getStyles();
     html += `
       <ha-card>
-        <div class="header">
+        <div class="header card-header">
             <span>${displayTitle}</span>
             <div class="header-actions">
                 ${showSearch ? `<button class="icon-button" id="btn-search-toggle" title="${this.localize('search_btn')}"><ha-icon icon="mdi:magnify"></ha-icon></button>` : ''}
@@ -2123,11 +2130,15 @@ class TaskOrganizerCard extends HTMLElement {
       }
       
       let assigneesList = getEffectiveAssignees(task);
-      const assigneeHtml = assigneesList.map(uid => `
+      const assigneeHtml = assigneesList.map(uid => {
+          const picture = this.userPictures && this.userPictures[uid];
+          // The picture covers the initial. If it fails to load it removes itself and the initial shows again.
+          const pictureHtml = picture ? `<img src="${String(picture).replace(/"/g, '&quot;')}" alt="" onerror="this.remove()">` : '';
+          return `
           <div class="mini-avatar" title="${this.users[uid] || this.localize('unknown')}">
-              ${(this.users[uid] || '?').charAt(0).toUpperCase()}
-          </div>
-      `).join('');
+              <span>${(this.users[uid] || '?').charAt(0).toUpperCase()}</span>${pictureHtml}
+          </div>`;
+      }).join('');
 
       // Subtask Progress Logic
       let progressText = "";

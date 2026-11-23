@@ -26,3 +26,17 @@ export function getEffectiveAssignees(task) {
   else who = pool[0];
   return [who];
 }
+
+/**
+ * Users that can never be awarded points (e.g. the wall tablets). Hard-coded on purpose.
+ * Compared case-insensitively with the person's name. Keep in sync with exclusions.py.
+ */
+export const EXCLUDED_POINT_USERS = ['echo 8', 'echo 5'];
+
+/**
+ * @param {string} name - The display name of a user.
+ * @returns {boolean} - True if this user can never be awarded points.
+ */
+export function isPointExcludedUser(name) {
+  return EXCLUDED_POINT_USERS.includes(String(name || '').trim().toLowerCase());
+}
