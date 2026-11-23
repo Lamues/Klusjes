@@ -177,7 +177,7 @@ class TaskOrganizerLeaderboard extends HTMLElement {
       <style> 
         :host { display: block; width: ${width}; margin: 0 auto; } 
         ha-card { padding: 16px; text-align: center; width: 100%; height: ${height}; box-sizing: border-box; overflow-y: auto; display: flex; flex-direction: column; } 
-        .header { font-size: 14px; font-weight: 500; line-height: 1.3; color: var(--ha-card-header-color, var(--secondary-text-color)); margin-bottom: 24px; } 
+        .header { font-size: var(--ha-font-size-l, 16px); font-weight: 500; line-height: 1.3; color: var(--ha-card-header-color, var(--secondary-text-color)); margin-bottom: 24px; } 
         .period-text { font-size: 12px; font-weight: normal; color: var(--secondary-text-color); margin-top: 4px; } 
         .podium-container { display: flex; justify-content: center; align-items: flex-end; gap: 8px; min-height: 200px; margin-top: 10px; } 
         .podium-place { display: flex; flex-direction: column; align-items: center; width: 30%; position: relative; justify-content: flex-end; } 

@@ -1530,7 +1530,7 @@ class TaskOrganizerCard extends HTMLElement {
           :host { display: block; width: ${width}; margin: 0 auto; } 
           ha-card { width: 100%; height: ${height}; padding: 16px; display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; position: relative; min-height: 100px; } 
           
-          .header { display: flex; justify-content: space-between; align-items: center; margin: 0 0 15px 0; padding: 0; font-size: 14px !important; font-weight: 500; line-height: 1.3; color: var(--ha-card-header-color, var(--secondary-text-color)); } 
+          .header { display: flex; justify-content: space-between; align-items: center; margin: 0 0 15px 0; padding: 0; font-size: var(--ha-font-size-l, 16px) !important; font-weight: 500; line-height: 1.3; color: var(--ha-card-header-color, var(--secondary-text-color)); } 
           .header span { font: inherit; color: inherit; } 
           .header-actions { display: flex; gap: 8px; align-items: center; }
           
