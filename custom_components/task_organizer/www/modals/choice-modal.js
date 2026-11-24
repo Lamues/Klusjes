@@ -101,7 +101,7 @@ export class TaskOrganizerChoiceModal extends HTMLElement {
 
     this._activeUids.forEach(uid => {
         let pts = (this._distribution[uid] / 100) * totalComplexity;
-        pts = Math.round(pts * 2) / 2;
+        pts = Math.round(pts); // whole points only
         ptsMap[uid] = pts;
         currentPointSum += pts;
     });
@@ -122,7 +122,7 @@ export class TaskOrganizerChoiceModal extends HTMLElement {
   _updateDistributionUI() {
     const listItems = this.shadowRoot.querySelectorAll('.dist-row');
     this._activeUids.forEach((uid, i) => {
-        const pts = ((this._distribution[uid] / 100) * (this._task.complexity || 5)).toFixed(1);
+        const pts = Math.round((this._distribution[uid] / 100) * (this._task.complexity || 5));
         const pct = this._distribution[uid].toFixed(1);
         
         const pctPtsSpan = listItems[i].querySelector('.pts-live');
@@ -157,7 +157,7 @@ export class TaskOrganizerChoiceModal extends HTMLElement {
   }
 
   _render() {
-    const pointStepPct = (0.5 / (this._task.complexity || 5)) * 100;
+    const pointStepPct = (1 / (this._task.complexity || 5)) * 100; // one whole point per step
     let html = `
       <style>
         .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 5000; justify-content: center; align-items: flex-start; padding-top: 120px; padding-bottom: 24px; box-sizing: border-box; overflow-y: auto; }
@@ -191,14 +191,14 @@ export class TaskOrganizerChoiceModal extends HTMLElement {
 
     this._activeUids.forEach(uid => {
       const pct = (this._distribution[uid] || 0).toFixed(1);
-      const pts = ((pct / 100) * (this._task.complexity || 0)).toFixed(1);
+      const pts = Math.round((pct / 100) * (this._task.complexity || 0));
       html += `
         <div class="dist-row" style="display:flex; align-items:flex-start; gap:12px; padding: 8px 0; border-bottom: 1px solid var(--divider-color);">
             <div style="display:flex; flex-direction:column; flex:1; min-width:0;">
                 <span style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this._users[uid]}</span>
                 <span class="dist-pct-pts" style="display: inline-grid; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--secondary-text-color);">
                     <span class="pts-live" style="grid-area: 1 / 1; white-space: nowrap;">${pts} ${this.localize('points')}</span>
-                    <span aria-hidden="true" style="grid-area: 1 / 1; visibility: hidden; white-space: nowrap;">88.8 ${this.localize('points')}</span>
+                    <span aria-hidden="true" style="grid-area: 1 / 1; visibility: hidden; white-space: nowrap;">88 ${this.localize('points')}</span>
                 </span>
             </div>
             <input type="range" class="user-dist-slider" data-uid="${uid}" min="0" max="100" step="${pointStepPct}" value="${pct}" style="flex:1.5; height:8px; cursor:pointer; margin-top: 6px;">

@@ -4,10 +4,14 @@ By default a recurring task becomes due again ``interval`` days after it was
 completed. A task can optionally carry a ``schedule`` instead, which makes it
 become due on fixed calendar days, no matter when it was completed:
 
-    {"type": "weekly",    "weekday": 0}              # 0 = Monday ... 6 = Sunday
-    {"type": "monthly",   "day": 15}                 # day of the month
-    {"type": "quarterly", "day": 15, "month": 1}     # month 1/2/3 of every quarter
-    {"type": "yearly",    "day": 15, "month": 3}     # month 1..12
+    {"type": "weekly",     "weekdays": [0, 2]}         # 0 = Monday ... 6 = Sunday, one or more days
+    {"type": "monthly",    "day": 15}                  # day of the month
+    {"type": "quarterly",  "day": 15, "month": 1}      # month 1/2/3 of every quarter
+    {"type": "halfyearly", "day": 15, "month": 2}      # month 1..6 of every half year
+    {"type": "yearly",     "day": 15, "month": 3}      # month 1..12
+
+Older versions stored a single ``"weekday": 0`` for weekly schedules. That is still
+understood and converted to ``"weekdays": [0]``.
 
 A day that does not exist in a month (e.g. 31 in February) falls back to the
 last day of that month, so ``day: 31`` means "the last day of the month".
@@ -42,8 +46,13 @@ def normalize_schedule(raw: Any) -> dict[str, Any] | None:
 
     kind = raw.get("type")
     if kind == "weekly":
-        weekday = _int_in_range(raw.get("weekday"), 0, 6)
-        return None if weekday is None else {"type": "weekly", "weekday": weekday}
+        raw_days = raw.get("weekdays")
+        if raw_days is None and raw.get("weekday") is not None:
+            raw_days = [raw.get("weekday")]  # format of older versions
+        if not isinstance(raw_days, (list, tuple, set)):
+            return None
+        days = sorted({d for d in (_int_in_range(x, 0, 6) for x in raw_days) if d is not None})
+        return {"type": "weekly", "weekdays": days} if days else None
 
     day = _int_in_range(raw.get("day"), 1, 31)
     if day is None:
@@ -53,10 +62,21 @@ def normalize_schedule(raw: Any) -> dict[str, Any] | None:
     if kind == "quarterly":
         month = _int_in_range(raw.get("month"), 1, 3)
         return None if month is None else {"type": "quarterly", "day": day, "month": month}
+    if kind == "halfyearly":
+        month = _int_in_range(raw.get("month"), 1, 6)
+        return None if month is None else {"type": "halfyearly", "day": day, "month": month}
     if kind == "yearly":
         month = _int_in_range(raw.get("month"), 1, 12)
         return None if month is None else {"type": "yearly", "day": day, "month": month}
     return None
+
+
+def _weekdays_of(schedule: dict[str, Any]) -> list[int]:
+    """Weekdays of a weekly schedule (also understands the old single ``weekday`` key)."""
+    days = schedule.get("weekdays")
+    if days is None:
+        days = [schedule["weekday"]]
+    return sorted(days)
 
 
 def describe_schedule(schedule: dict[str, Any] | None) -> str | None:
@@ -65,11 +85,13 @@ def describe_schedule(schedule: dict[str, Any] | None) -> str | None:
         return None
     kind = schedule["type"]
     if kind == "weekly":
-        return f"weekly: {calendar.day_name[schedule['weekday']]}"
+        return "weekly: " + ", ".join(calendar.day_name[d] for d in _weekdays_of(schedule))
     if kind == "monthly":
         return f"monthly: day {schedule['day']}"
     if kind == "quarterly":
         return f"quarterly: day {schedule['day']}, month {schedule['month']} of the quarter"
+    if kind == "halfyearly":
+        return f"every 6 months: day {schedule['day']}, month {schedule['month']} of the half year"
     return f"yearly: {calendar.month_name[schedule['month']]} {schedule['day']}"
 
 
@@ -79,6 +101,8 @@ def _month_matches(schedule: dict[str, Any], month: int) -> bool:
         return True
     if kind == "quarterly":
         return (month - 1) % 3 == schedule["month"] - 1
+    if kind == "halfyearly":
+        return (month - 1) % 6 == schedule["month"] - 1
     return month == schedule["month"]  # yearly
 
 
@@ -87,10 +111,13 @@ def next_occurrence(schedule: dict[str, Any], after: date, inclusive: bool = Fal
     Return the first scheduled date after ``after`` (or on it if ``inclusive``).
     """
     if schedule["type"] == "weekly":
-        delta = (schedule["weekday"] - after.weekday()) % 7
-        if delta == 0 and not inclusive:
-            delta = 7
-        return after + timedelta(days=delta)
+        deltas = []
+        for weekday in _weekdays_of(schedule):
+            delta = (weekday - after.weekday()) % 7
+            if delta == 0 and not inclusive:
+                delta = 7
+            deltas.append(delta)
+        return after + timedelta(days=min(deltas))
 
     year, month = after.year, after.month
     for _ in range(_MAX_MONTHS_SCANNED):

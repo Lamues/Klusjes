@@ -1,10 +1,11 @@
 /**
  * Fixed-calendar schedules (mirrors schedule.py).
  *
- *   { type: 'weekly',    weekday: 0 }            // 0 = Monday ... 6 = Sunday
- *   { type: 'monthly',   day: 15 }
- *   { type: 'quarterly', day: 15, month: 1 }     // month 1/2/3 of every quarter
- *   { type: 'yearly',    day: 15, month: 3 }
+ *   { type: 'weekly',     weekdays: [0, 2] }      // 0 = Monday ... 6 = Sunday, one or more days
+ *   { type: 'monthly',    day: 15 }
+ *   { type: 'quarterly',  day: 15, month: 1 }     // month 1/2/3 of every quarter
+ *   { type: 'halfyearly', day: 15, month: 2 }     // month 1..6 of every half year
+ *   { type: 'yearly',     day: 15, month: 3 }
  *
  * A day that does not exist in a month (e.g. 31 in February) falls back to the
  * last day of that month.
@@ -17,9 +18,16 @@ export function toYMD(d) {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+/** Weekdays of a weekly schedule (also understands the old single `weekday` key). */
+export function weekdaysOf(schedule) {
+  const days = Array.isArray(schedule.weekdays) ? schedule.weekdays : [schedule.weekday];
+  return days.map(Number).filter(d => d >= 0 && d <= 6);
+}
+
 function monthMatches(schedule, month) {
   if (schedule.type === 'monthly') return true;
   if (schedule.type === 'quarterly') return (month - 1) % 3 === schedule.month - 1;
+  if (schedule.type === 'halfyearly') return (month - 1) % 6 === schedule.month - 1;
   return month === schedule.month; // yearly
 }
 
@@ -35,8 +43,12 @@ export function nextOccurrence(schedule, after, inclusive = false) {
 
   if (schedule.type === 'weekly') {
     const weekday = (base.getDay() + 6) % 7; // Monday = 0
-    let delta = (schedule.weekday - weekday + 7) % 7;
-    if (delta === 0 && !inclusive) delta = 7;
+    const days = weekdaysOf(schedule);
+    if (days.length === 0) return null;
+    const delta = Math.min(...days.map(d => {
+      const diff = (d - weekday + 7) % 7;
+      return (diff === 0 && !inclusive) ? 7 : diff;
+    }));
     return new Date(base.getFullYear(), base.getMonth(), base.getDate() + delta);
   }
 

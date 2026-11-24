@@ -372,8 +372,8 @@ class TaskOrganizerKanban extends HTMLElement {
           
           .task-card {
             background: var(--card-background-color);
-            border-radius: 6px;
-            padding: 6px 8px;
+            border-radius: var(--ha-card-border-radius, 12px);
+            padding: 8px 12px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             cursor: grab;
             user-select: none;

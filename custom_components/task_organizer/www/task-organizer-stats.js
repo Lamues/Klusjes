@@ -275,7 +275,7 @@ class TaskOrganizerStats extends HTMLElement {
         .header { font-size: var(--ha-font-size-l, 16px); font-weight: 500; line-height: 1.3; color: var(--ha-card-header-color, var(--secondary-text-color)); } 
         
         .hist-list { display: flex; flex-direction: column; gap: 10px; width: 100%; } 
-        .hist-item { display: flex; align-items: center; justify-content: space-between; background: var(--card-background-color); padding: 12px; border-radius: 8px; border: 1px solid var(--divider-color); transition: transform 0.2s; min-height: 75px; box-sizing: border-box; } 
+        .hist-item { display: flex; align-items: center; justify-content: space-between; background: var(--card-background-color); padding: 12px; border-radius: var(--ha-card-border-radius, 12px); border: 1px solid var(--divider-color); transition: transform 0.2s; min-height: 75px; box-sizing: border-box; } 
         .hist-item:hover { background-color: var(--secondary-background-color); transform: translateX(2px); box-shadow: -2px 4px 8px rgba(0,0,0,0.1); } 
         
         .hist-info { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; color: var(--primary-text-color); } 

@@ -1548,8 +1548,15 @@ class TaskOrganizerCard extends HTMLElement {
           #task-list-wrapper { display: flex; flex-direction: column; flex-grow: 1; width: 100%; }
           .task-list { display: flex; flex-direction: column; gap: 10px; width: 100%; } 
           
-          .task-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: 8px; border-left: 6px solid var(--status-color); border: 1px solid var(--divider-color); background-color: color-mix(in srgb, var(--status-color), transparent var(--status-transparency, 92%)); transition: transform 0.2s; min-height: 75px; box-sizing: border-box; } 
+          .task-item { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: var(--ha-card-border-radius, 12px); border-left: 6px solid var(--status-color); border: 1px solid var(--divider-color); background-color: color-mix(in srgb, var(--status-color), transparent var(--status-transparency, 92%)); transition: transform 0.2s; min-height: 75px; box-sizing: border-box; } 
           .task-item:hover { background-color: color-mix(in srgb, var(--status-color), transparent var(--status-transparency-hover, 85%)); transform: translateX(2px); box-shadow: -2px 4px 8px rgba(0,0,0,0.1); } 
+          .task-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: color-mix(in srgb, var(--status-color) 20%, transparent); pointer-events: none; }
+          .task-progress-fill { position: absolute; left: 0; top: 0; bottom: 0; width: var(--progress, 0%); border-radius: 0 3px 3px 0; overflow: hidden; background: color-mix(in srgb, var(--status-color) 58%, black); }
+          .task-progress-fill.grow { animation: tp-grow 0.9s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
+          .task-progress-fill::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 50%, transparent 100%); transform: translateX(-100%); animation: tp-shimmer 2.8s ease-in-out 1.2s infinite; }
+          @keyframes tp-grow { from { width: 0; } to { width: var(--progress, 0%); } }
+          @keyframes tp-shimmer { 0% { transform: translateX(-100%); } 55%, 100% { transform: translateX(100%); } }
+          @media (prefers-reduced-motion: reduce) { .task-progress-fill.grow, .task-progress-fill::after { animation: none; } }
           .task-info { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; color: var(--primary-text-color); } 
           .task-text { flex: 1; min-width: 0; word-break: break-word; text-align: left; } 
           .task-title { color: var(--primary-text-color); font-weight: bold; margin: 0; font-size: 15px; display: flex; align-items: center; gap: 4px; cursor: help; overflow: hidden; } 
@@ -1563,7 +1570,7 @@ class TaskOrganizerCard extends HTMLElement {
           .actions { display: flex; gap: 4px; flex-shrink: 0; } 
           .action-btn { background: transparent; border: none; padding: 8px; border-radius: 50%; cursor: pointer; color: var(--secondary-text-color); transition: background-color 0.2s, color 0.2s; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; }
           .action-btn:hover { background-color: var(--secondary-background-color); color: var(--primary-text-color); }
-          .btn-complete { box-sizing: border-box; border: 2px solid currentColor; color: var(--primary-text-color); }
+          .btn-complete { box-sizing: border-box; border: none; box-shadow: inset 0 0 0 1.5px currentColor; color: var(--primary-text-color); }
           .btn-complete:active { color: var(--success-color, #4CAF50); background-color: color-mix(in srgb, var(--success-color, #4CAF50) 12%, transparent); }
           @media (hover: hover) { .btn-complete:hover { color: var(--success-color, #4CAF50); background-color: color-mix(in srgb, var(--success-color, #4CAF50) 12%, transparent); } } 
           .btn-edit { color: var(--info-color, #2196F3); } 
@@ -2108,18 +2115,7 @@ class TaskOrganizerCard extends HTMLElement {
         if (diff <= 0) { borderColor = configColorDue; transparency = transpDue; }
         if (diff <= -overdueThreshold) { borderColor = configColorOverdue; transparency = transpOverdue; }
         
-        let someSubtasksDone = false;
-        let allSubtasksDone = false;
-        if (task.subtasks && task.subtasks.length > 0) {
-            const total = task.subtasks.length;
-            const completed = task.subtasks.filter(st => st.done).length;
-            if (completed === total) allSubtasksDone = true;
-            else if (completed > 0) someSubtasksDone = true;
-        }
-        if (someSubtasksDone && !allSubtasksDone) {
-            borderColor = configColorInProgress; 
-            transparency = transpInProgress;
-        }
+        // Partly completed subtasks keep the normal due/overdue color. The progress bar at the bottom of the entry shows how far it is.
         
         if (diff > 0) timeText = this.localize('in_days', {days: diff});
         else if (diff < 0) timeText = this.localize('ago_days', {days: Math.abs(diff)});
@@ -2144,12 +2140,20 @@ class TaskOrganizerCard extends HTMLElement {
       // Subtask Progress Logic
       let progressText = "";
       let subtaskTooltip = "";
+      let progressHtml = "";
       if (task.subtasks && task.subtasks.length > 0) {
           const total = task.subtasks.length;
           const completed = task.subtasks.filter(st => st.done).length;
           if (completed > 0) {
               const percent = Math.round((completed / total) * 100);
               progressText = ` • ${this.localize('completed_percent', {percent: percent})}`;
+              // Only the first appearance (or a change) grows from the left; later redraws stay still.
+              this._progressSeen = this._progressSeen || {};
+              const grow = this._progressSeen[task.id] !== percent;
+              this._progressSeen[task.id] = percent;
+              progressHtml = `<div class="task-progress" title="${percent}%"><div class="task-progress-fill${grow ? ' grow' : ''}" style="--progress: ${percent}%;"></div></div>`;
+          } else if (this._progressSeen) {
+              delete this._progressSeen[task.id];
           }
           const subtaskList = task.subtasks.map(st => `${st.done ? '✓' : '○'} ${st.title}`).join('&#10;');
           subtaskTooltip = `${this.localize('subtasks')}:&#10;${subtaskList}`;
@@ -2181,6 +2185,7 @@ class TaskOrganizerCard extends HTMLElement {
                 ${showEdit ? `<button class="action-btn btn-edit" data-id="${task.id}"><ha-icon icon="mdi:pencil"></ha-icon></button>` : ''}
                 ${showDelete ? `<button class="action-btn btn-delete" data-id="${task.id}"><ha-icon icon="mdi:delete"></ha-icon></button>` : ''}
             </div>
+            ${progressHtml}
         </div>
       `;
     });

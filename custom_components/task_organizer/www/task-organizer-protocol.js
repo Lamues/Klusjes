@@ -168,7 +168,7 @@ class TaskOrganizerProtocol extends HTMLElement {
         ha-card { padding: 16px; display: flex; flex-direction: column; height: ${this.config.card_height || 'auto'}; overflow-y: auto; }
         .header { font-size: var(--ha-font-size-l, 16px); font-weight: 500; line-height: 1.3; color: var(--ha-card-header-color, var(--secondary-text-color)); margin-bottom: 10px; }
         .protocol-list { display: flex; flex-direction: column; gap: 10px; }
-        .hist-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: 8px; border: 1px solid var(--divider-color); }
+        .hist-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: var(--ha-card-border-radius, 12px); border: 1px solid var(--divider-color); }
         .task-name { font-weight: bold; display: block; }
         .meta { font-size: 12px; color: var(--secondary-text-color); }
         .actions { display: flex; align-items: center; gap: 4px; }

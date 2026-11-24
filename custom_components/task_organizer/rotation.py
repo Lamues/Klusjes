@@ -99,3 +99,20 @@ def advance_assignee(
     else:
         task["next_assignee"] = pool[(pool.index(responsible) + 1) % len(pool)]
     return took_over
+
+
+def set_current_assignee(task: dict[str, Any], user_id: str | None) -> bool:
+    """
+    Make ``user_id`` the person who is responsible right now.
+
+    Works only for tasks with two or more assignees and a user from that pool.
+    The rotation continues from this person. Returns True if something changed.
+    """
+    pool = _pool(task)
+    if len(pool) < 2 or not user_id or user_id not in pool:
+        return False
+    if get_effective_assignees(task)[0] == user_id:
+        return False
+    task["current_assignee"] = user_id
+    task["next_assignee"] = user_id
+    return True

@@ -59,7 +59,8 @@ from .const import (
     SERVICE_EDIT_TEMPLATE_BY_NAME,
 )
 
-from .rotation import advance_assignee, get_effective_assignees
+from .rotation import advance_assignee, get_effective_assignees, set_current_assignee
+from .points import allocate_whole_points, split_equally
 from .schedule import (
     compute_next_due,
     date_string_to_due_iso,
@@ -167,17 +168,12 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry):
     hass.bus.async_fire(EVENT_TASK_UPDATED)
 
 
-def _calculate_points_per_user(total_points: float, user_count: int) -> float:
-    """
-    Calculate the fair share of points per user.
-    
-    :param total_points: The total complexity/points of the task.
-    :param user_count: The amount of users that completed the task.
-    :return: The rounded points per user.
-    """
-    if user_count <= 0:
-        return 0.0
-    return round(total_points / user_count, 1)
+def _total_points(task: dict) -> int:
+    """The points a task is worth, always a whole number."""
+    try:
+        return max(0, int(round(float(task.get("complexity", 1)))))
+    except (TypeError, ValueError):
+        return 1
 
 
 def _get_user_id(hass: HomeAssistant, target: str) -> str | None:
@@ -268,7 +264,7 @@ async def _async_complete_task_internal(hass: HomeAssistant, task_id: str, compl
         return False
 
     task = data["tasks"][task_id]
-    total_points = float(task.get("complexity", 1))
+    total_points = _total_points(task)
     
     old_points = data["points"].copy()
 
@@ -282,17 +278,14 @@ async def _async_complete_task_internal(hass: HomeAssistant, task_id: str, compl
             completed_by = [u for u in get_effective_assignees(task) if u not in excluded_users]
 
     # Create mapping for users receiving points (either from distribution or fair share)
-    users_with_points = {}
+    # Points are always whole numbers.
     if points_distribution:
-        for u_id, percentage in points_distribution.items():
-            users_with_points[u_id] = round((percentage / 100) * total_points, 1)
+        users_with_points = allocate_whole_points(total_points, points_distribution)
     else:
-        share = _calculate_points_per_user(total_points, len(completed_by))
-        for u_id in completed_by:
-            users_with_points[u_id] = share
+        users_with_points = split_equally(total_points, completed_by)
 
     for u_id, pts in users_with_points.items():
-        data["points"].setdefault(u_id, 0.0)
+        data["points"].setdefault(u_id, 0)
         data["points"][u_id] += pts
 
         history_entry = {
@@ -347,7 +340,8 @@ async def _async_complete_task_internal(hass: HomeAssistant, task_id: str, compl
         "task_id": task_id,
         "task_name": task.get("name"),
         "completed_by": list(users_with_points.keys()),
-        "points_per_user": None if points_distribution else _calculate_points_per_user(total_points, len(completed_by)),
+        "points_per_user": None if points_distribution or not users_with_points else max(users_with_points.values()),
+        "points_awarded": users_with_points,
         "total_points": total_points
     })
     
@@ -389,6 +383,7 @@ async def ws_complete_task(hass: HomeAssistant, connection: websocket_api.Active
     vol.Optional("area", default=""): str,
     vol.Required("interval"): int,
     vol.Optional("assignees"): cv.ensure_list,
+    vol.Optional("current_assignee"): vol.Any(str, None),
     vol.Required("complexity"): vol.All(int, vol.Range(min=1, max=10)),
     vol.Required("category"): str, 
     vol.Required("icon"): str,
@@ -414,8 +409,9 @@ async def ws_add_task(hass: HomeAssistant, connection: websocket_api.ActiveConne
     schedule = normalize_schedule(msg.get("schedule")) if msg["interval"] > 0 else None
     custom_due_date_str = msg.get("custom_due_date")
     if custom_due_date_str: # Ensure datetime is imported for fromisoformat
+        # A manually picked date is stored at 12:00 local time, so the day is the same in UTC and locally.
         due_date = (
-            (date_string_to_due_iso(custom_due_date_str) if schedule else None)
+            date_string_to_due_iso(custom_due_date_str)
             or datetime.fromisoformat(custom_due_date_str).isoformat()
         )
     elif schedule:
@@ -442,6 +438,8 @@ async def ws_add_task(hass: HomeAssistant, connection: websocket_api.ActiveConne
         "images": msg.get("images", [])
     }
     
+    set_current_assignee(new_task, msg.get("current_assignee"))
+
     data["tasks"][task_id] = new_task
     hass.bus.async_fire(EVENT_TASK_CREATED, new_task)
     await _log_audit_event(hass, task_id, "created", user_id=connection.user.id)
@@ -458,6 +456,7 @@ async def ws_add_task(hass: HomeAssistant, connection: websocket_api.ActiveConne
     vol.Optional("area"): str,
     vol.Optional("interval"): int, 
     vol.Optional("assignees"): cv.ensure_list,
+    vol.Optional("current_assignee"): vol.Any(str, None),
     vol.Optional("complexity"): vol.All(int, vol.Range(min=1, max=10)),
     vol.Optional("category"): str, 
     vol.Optional("icon"): str,
@@ -517,17 +516,19 @@ async def ws_edit_task(hass: HomeAssistant, connection: websocket_api.ActiveConn
 
     if msg.get("custom_due_date"):
         custom_due = msg["custom_due_date"]
-        if task_ref.get("schedule"):
-            # The edit form always sends the current due date back, so only treat it as a
-            # change when another day was picked. Scheduled dates are stored at noon local time.
-            if custom_due[:10] != str(original_task.get("due_date") or "")[:10]:
-                task_ref["due_date"] = (
-                    date_string_to_due_iso(custom_due)
-                    or dt_util.as_utc(dt_util.parse_datetime(custom_due)).isoformat()
-                )
-        else:
-            task_ref["due_date"] = dt_util.as_utc(dt_util.parse_datetime(custom_due)).isoformat()
+        # Picking a date only moves the NEXT due date. A fixed schedule keeps running afterwards:
+        # after the task is completed the next date is calculated from the schedule again.
+        # Dates are stored at 12:00 local time, so the day is the same in UTC and locally.
+        if custom_due[:10] != str(original_task.get("due_date") or "")[:10]:
+            task_ref["due_date"] = (
+                date_string_to_due_iso(custom_due)
+                or dt_util.as_utc(dt_util.parse_datetime(custom_due)).isoformat()
+            )
         
+    # Who is responsible right now (only for tasks with several assignees)
+    if msg.get("current_assignee"):
+        set_current_assignee(task_ref, msg["current_assignee"])
+
     if "paused_until" in msg:
         task_ref["paused_until"] = msg["paused_until"]
 
@@ -556,6 +557,8 @@ async def ws_edit_task(hass: HomeAssistant, connection: websocket_api.ActiveConn
         return False
 
     for k, v in task_ref.items():
+        if k == "next_assignee":
+            continue  # internal rotation state, shown through current_assignee
         old_v = original_task.get(k)
         if not _is_equal(k, old_v, v):
             if k == "paused_until" and old_v and v in (None, ""):
@@ -1072,27 +1075,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not completed_by: 
             return
             
-        total_points = float(task.get("complexity", 1))
-        points_per_user = _calculate_points_per_user(total_points, len(completed_by))
+        total_points = _total_points(task)
+        shares = split_equally(total_points, completed_by)
+        points_per_user = max(shares.values()) if shares else 0
         
         old_points = data["points"].copy()
         
-        for u_id in completed_by:
+        for u_id, share in shares.items():
             if u_id not in data["points"]: 
                 data["points"][u_id] = 0
-            data["points"][u_id] += points_per_user
+            data["points"][u_id] += share
             
             history_entry = {
                 "id": str(uuid.uuid4()), 
                 "task_id": target_task_id,
                 "task_name": task.get("name", "Unknown task"),
                 "user_id": u_id, 
-                "points": points_per_user,
+                "points": share,
                 "timestamp": dt_util.utcnow().isoformat()
             }
             data["history"].insert(0, history_entry)
         
-        advance_assignee(task, {u_id: points_per_user for u_id in completed_by}, total_points)
+        advance_assignee(task, shares, total_points)
 
         interval = task.get("interval", 1)
         task["due_date"] = compute_next_due(task) or (dt_util.utcnow() + timedelta(days=interval)).isoformat()
@@ -1108,8 +1112,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.bus.async_fire(EVENT_TASK_COMPLETED, {
             "task_id": target_task_id,
             "task_name": task.get("name"),
-            "completed_by": completed_by,
+            "completed_by": list(shares.keys()),
             "points_per_user": points_per_user,
+            "points_awarded": shares,
             "total_points": total_points
         })
         
