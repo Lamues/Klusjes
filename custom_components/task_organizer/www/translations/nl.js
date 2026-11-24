@@ -98,7 +98,18 @@ export const nl = {
     day_of_month_lbl: "Dag van de maand",
     day_of_month_hint: "Gebruik 31 voor de laatste dag van de maand (kortere maanden gebruiken hun laatste dag).",
     month_lbl: "Maand",
-    quarter_months_lbl: "Maanden van het kwartaal"
+    quarter_months_lbl: "Maanden van het kwartaal",
+    repeat_halfyearly: "Elk halfjaar, op een dag van de maand",
+    weekdays_lbl: "Weekdagen (één of meer)",
+    half_year_months_lbl: "Maanden van het halfjaar",
+    weekday_required: "Kies minstens één weekdag.",
+    current_assignee_lbl: "Huidige verantwoordelijke",
+    current_assignee_hint: "Wie nu aan de beurt is. De rotatie gaat verder vanaf deze persoon.",
+    next_due_lbl: "Volgende vervaldatum",
+    pick_next_due_btn: "Volgende vervaldatum handmatig kiezen",
+    reset_manual_due: "Ongedaan maken",
+    manual_due_hint: "Wijzigt alleen de eerstvolgende vervaldatum. Daarna geldt weer het gewone interval of schema.",
+    subtasks_progress: "{done} van {total} klaar"
   },
   leaderboard: {
     all_time: "Allertijden",
