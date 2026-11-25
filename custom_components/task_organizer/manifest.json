@@ -1,6 +1,6 @@
 {
   "domain": "task_organizer",
-  "name": "TaskOrganizer",
+  "name": "Klusjesbeheer",
   "codeowners": [
     "@patrickvonwiegen"
   ],

@@ -8,7 +8,7 @@ window.customCards = window.customCards || [];
 if (!window.customCards.some(c => c.type === "task-organizer-leaderboard")) {
   window.customCards.push({
     type: "task-organizer-leaderboard",
-    name: "Task Organizer: Roommate of the Month",
+    name: "Klusjesbeheer: Huisgenoot van de maand",
     description: "A custom card to display the winner's podium.",
     preview: true,
   });

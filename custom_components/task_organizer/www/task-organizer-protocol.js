@@ -9,7 +9,7 @@ window.customCards = window.customCards || [];
 if (!window.customCards.some(c => c.type === "task-organizer-protocol")) {
   window.customCards.push({
     type: "task-organizer-protocol",
-    name: "Task Organizer: Protocol",
+    name: "Klusjesbeheer: Protocol",
     description: "Displays a protocol of recently completed tasks.",
     preview: true,
   });

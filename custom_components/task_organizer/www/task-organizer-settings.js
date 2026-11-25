@@ -8,7 +8,7 @@ window.customCards = window.customCards || [];
 if (!window.customCards.some(c => c.type === "task-organizer-settings")) {
   window.customCards.push({
     type: "task-organizer-settings",
-    name: "Task Organizer: Settings",
+    name: "Klusjesbeheer: Instellingen",
     description: "A custom card to manage settings, templates, and backups.",
     preview: true,
   });

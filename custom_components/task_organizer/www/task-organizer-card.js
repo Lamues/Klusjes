@@ -11,7 +11,7 @@ await import(`./modals/task-modal.js?v=${_v}`);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "task-organizer-card",
-  name: "Task Organizer: Task List",
+  name: "Klusjesbeheer: Klusjeslijst",
   description: "A custom list card to display and manage household tasks.",
   preview: true,
 });
@@ -212,7 +212,7 @@ class TaskOrganizerCard extends HTMLElement {
    * Fetches the current task and settings data from the backend.
    */
   _fetchData() {
-    this._hass.callWS({ type: 'task_organizer/get_data' }).then((data) => {
+    return this._hass.callWS({ type: 'task_organizer/get_data' }).then((data) => {
       this.tasks = data.tasks || {};
       this.templates = data.templates || {};
       this.history = data.history || [];
@@ -222,6 +222,15 @@ class TaskOrganizerCard extends HTMLElement {
       this._render();
     });
   }
+
+  /**
+   * Hooks that the "due tasks" card overrides.
+   */
+  _defaultTitle() { return this.localize('title'); }
+  _allowManage() { return true; }
+  _onlyDue() { return false; }
+  _onTaskCompleted(taskId) {}
+  _onTaskCompleteFailed(taskId) {}
 
   /**
    * Central click handler for the card. Dispatches actions based on target ID or class.
@@ -239,7 +248,15 @@ class TaskOrganizerCard extends HTMLElement {
             el.classList.contains('dist-btn')))
     );
     
-    if (!target) return;
+    if (!target) {
+        // Tapping anywhere on a due task that has subtasks opens the subtask popup.
+        const entry = path.find(el => el.classList && el.classList.contains('tappable'));
+        if (entry && entry.dataset && entry.dataset.id) {
+            ev.stopPropagation();
+            this._checkCompleteAction(entry.dataset.id);
+        }
+        return;
+    }
     
     ev.stopPropagation();
     const taskId = target.dataset?.id;
@@ -853,11 +870,13 @@ class TaskOrganizerCard extends HTMLElement {
     }
     this._hass.callWS(payload)
       .then(() => {
+        this._onTaskCompleted(taskId);
         this._fetchData();
         this._showToast(this.localize('done'));
       })
       .catch(err => {
         console.error("TaskOrganizer: Fehler beim Abschließen der Aufgabe", err);
+        this._onTaskCompleteFailed(taskId);
         this._showToast("Fehler: " + (err.message || "Unbekannter Fehler beim Abschließen"));
       });
   }
@@ -1528,7 +1547,7 @@ class TaskOrganizerCard extends HTMLElement {
       return `
         <style>
           :host { display: block; width: ${width}; margin: 0 auto; } 
-          ha-card { width: 100%; height: ${height}; padding: 16px; display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; position: relative; min-height: 100px; } 
+          ha-card { --to-pad: 20px; --to-radius: max(calc(var(--ha-card-border-radius, 12px) - var(--to-pad)), 6px); width: 100%; height: ${height}; padding: var(--to-pad); display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; position: relative; min-height: 100px; } 
           
           .header { display: flex; justify-content: space-between; align-items: center; margin: 0 0 15px 0; padding: 0; font-size: var(--ha-font-size-l, 16px) !important; font-weight: 500; line-height: 1.3; color: var(--ha-card-header-color, var(--secondary-text-color)); } 
           .header span { font: inherit; color: inherit; } 
@@ -1548,8 +1567,20 @@ class TaskOrganizerCard extends HTMLElement {
           #task-list-wrapper { display: flex; flex-direction: column; flex-grow: 1; width: 100%; }
           .task-list { display: flex; flex-direction: column; gap: 10px; width: 100%; } 
           
-          .task-item { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: var(--ha-card-border-radius, 12px); border-left: 6px solid var(--status-color); border: 1px solid var(--divider-color); background-color: color-mix(in srgb, var(--status-color), transparent var(--status-transparency, 92%)); transition: transform 0.2s; min-height: 75px; box-sizing: border-box; } 
-          .task-item:hover { background-color: color-mix(in srgb, var(--status-color), transparent var(--status-transparency-hover, 85%)); transform: translateX(2px); box-shadow: -2px 4px 8px rgba(0,0,0,0.1); } 
+          .task-item { position: relative; overflow: hidden; display: flex; align-items: center; gap: 14px; padding: 14px 16px 14px 14px; border-radius: var(--to-radius); border: 1px solid var(--divider-color); background-color: color-mix(in srgb, var(--status-color), transparent var(--status-transparency, 92%)); transition: background-color 0.2s, transform 0.2s, box-shadow 0.2s; min-height: 84px; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+          @media (hover: hover) { .task-item:hover { background-color: color-mix(in srgb, var(--status-color), transparent var(--status-transparency-hover, 85%)); box-shadow: 0 2px 8px rgba(0,0,0,0.12); } }
+          .task-item.tappable { cursor: pointer; }
+          .task-item.tappable:active { background-color: color-mix(in srgb, var(--status-color), transparent var(--status-transparency-hover, 85%)); transform: scale(0.99); }
+          .task-badge { flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary-text-color); background: color-mix(in srgb, var(--status-color) 22%, transparent); --mdc-icon-size: 24px; }
+          .task-text { flex: 1; min-width: 0; word-break: break-word; text-align: left; display: flex; flex-direction: column; gap: 5px; }
+          .task-title { color: var(--primary-text-color); font-weight: 600; margin: 0; font-size: 18px; line-height: 1.25; display: flex; align-items: center; gap: 6px; overflow: hidden; }
+          .task-title span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; word-break: break-word; }
+          .task-meta-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+          .task-meta { font-size: 13px; line-height: 1.3; color: var(--secondary-text-color); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .assignees-icons { display: flex; flex-shrink: 0; }
+          .assignees-icons .mini-avatar + .mini-avatar { margin-left: -6px; }
+          .mini-avatar { position: relative; overflow: hidden; box-sizing: border-box; width: 24px; height: 24px; border-radius: 50%; background: var(--secondary-text-color); color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; text-transform: uppercase; box-shadow: 0 0 0 2px var(--card-background-color, #fff); }
+          .mini-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
           .task-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: color-mix(in srgb, var(--status-color) 20%, transparent); pointer-events: none; }
           .task-progress-fill { position: absolute; left: 0; top: 0; bottom: 0; width: var(--progress, 0%); border-radius: 0 3px 3px 0; overflow: hidden; background: color-mix(in srgb, var(--status-color) 58%, black); }
           .task-progress-fill.grow { animation: tp-grow 0.9s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
@@ -1557,22 +1588,12 @@ class TaskOrganizerCard extends HTMLElement {
           @keyframes tp-grow { from { width: 0; } to { width: var(--progress, 0%); } }
           @keyframes tp-shimmer { 0% { transform: translateX(-100%); } 55%, 100% { transform: translateX(100%); } }
           @media (prefers-reduced-motion: reduce) { .task-progress-fill.grow, .task-progress-fill::after { animation: none; } }
-          .task-info { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; color: var(--primary-text-color); } 
-          .task-text { flex: 1; min-width: 0; word-break: break-word; text-align: left; } 
-          .task-title { color: var(--primary-text-color); font-weight: bold; margin: 0; font-size: 15px; display: flex; align-items: center; gap: 4px; cursor: help; overflow: hidden; } 
-          .task-title span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-          .task-meta { font-size: 12px; color: var(--secondary-text-color); margin-top: 2px; } 
-          
-          .assignees-icons { display: flex; margin-top: 6px; gap: 4px; } 
-          .mini-avatar { position: relative; overflow: hidden; width: 22px; height: 22px; border-radius: 50%; background: var(--secondary-text-color); color: white; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; text-transform: uppercase; box-shadow: 0 1px 3px rgba(0,0,0,0.2); cursor: help; } 
-          
-          .mini-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-          .actions { display: flex; gap: 4px; flex-shrink: 0; } 
-          .action-btn { background: transparent; border: none; padding: 8px; border-radius: 50%; cursor: pointer; color: var(--secondary-text-color); transition: background-color 0.2s, color 0.2s; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; }
+          .actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+          .action-btn { background: transparent; border: none; padding: 8px; border-radius: 50%; cursor: pointer; color: var(--secondary-text-color); transition: background-color 0.2s, color 0.2s, transform 0.2s; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; }
           .action-btn:hover { background-color: var(--secondary-background-color); color: var(--primary-text-color); }
-          .btn-complete { box-sizing: border-box; border: none; box-shadow: inset 0 0 0 1.5px currentColor; color: var(--primary-text-color); }
+          .btn-complete { position: relative; width: 48px; height: 48px; --mdc-icon-size: 26px; box-sizing: border-box; border: none; box-shadow: inset 0 0 0 1.5px currentColor; color: var(--primary-text-color); }
           .btn-complete:active { color: var(--success-color, #4CAF50); background-color: color-mix(in srgb, var(--success-color, #4CAF50) 12%, transparent); }
-          @media (hover: hover) { .btn-complete:hover { color: var(--success-color, #4CAF50); background-color: color-mix(in srgb, var(--success-color, #4CAF50) 12%, transparent); } } 
+          @media (hover: hover) { .btn-complete:hover { color: var(--success-color, #4CAF50); background-color: color-mix(in srgb, var(--success-color, #4CAF50) 12%, transparent); } }
           .btn-edit { color: var(--info-color, #2196F3); } 
           .btn-delete { color: var(--error-color, #F44336); } 
           
@@ -1647,10 +1668,10 @@ class TaskOrganizerCard extends HTMLElement {
    * Builds the basic HTML skeleton of the card.
    */
   _buildSkeleton() {
-    const displayTitle = this._config.title || this.localize('title');
+    const displayTitle = this._config.title || this._defaultTitle();
     const showSearch = this._config.show_search !== false; 
     const showAdd = this._config.show_add !== false; 
-    const showEdit = this._config.show_edit !== false; 
+    const showEdit = this._allowManage() && this._config.show_edit !== false; 
 
     let html = this._getStyles();
     html += `
@@ -1943,8 +1964,9 @@ class TaskOrganizerCard extends HTMLElement {
     const sortBy = this._config.sort_by || 'due_date';
     const sortOrder = this._config.sort_order || 'default';
     const itemsPerPage = this._config.items_per_page;
-    const showDelete = this._config.show_delete !== false;
-    const showEdit = this._config.show_edit !== false;
+    const showDelete = this._allowManage() && this._config.show_delete !== false;
+    const showEdit = this._allowManage() && this._config.show_edit !== false;
+    const onlyDue = this._onlyDue();
 
     const nowForSort = new Date(); 
     nowForSort.setHours(0,0,0,0);
@@ -1974,6 +1996,8 @@ class TaskOrganizerCard extends HTMLElement {
         const isOverdue = !isPaused && diff <= overdueDiff;
         const isPausedFilter = isPaused;
         const isOnetime = task.interval === 0;
+
+        if (onlyDue && !(isDue || isOverdue)) return false;
 
         let keep = true;
         for (const f of filters) {
@@ -2165,19 +2189,21 @@ class TaskOrganizerCard extends HTMLElement {
       let itemStyle = `--status-color: ${borderColor}; --status-transparency: ${100 - transparency}%; --status-transparency-hover: ${100 - hoverTransparency}%;`;
       if (isPaused) itemStyle += ` opacity: 0.6; filter: grayscale(0.8);`;
 
+      const isTappable = !isPaused && diff <= 0 && task.subtasks && task.subtasks.length > 0;
+      const metaText = `${areaName ? areaName + ' • ' : ''}${timeText} • ${task.complexity} ${this.localize('points')}${progressText}`;
+
       html += `
-        <div class="task-item" style="${itemStyle}">
-            <div class="task-info">
-                <ha-icon icon="${task.icon || 'mdi:broom'}" style="flex-shrink: 0;"></ha-icon>
-                <div class="task-text">
-                    <div class="task-title">
-                        <span ${descTooltip ? `title="${descTooltip}"` : 'style="cursor: default;"'}>${task.name}</span>
-                        ${task.subtasks?.length > 0 ? `<ha-icon icon="mdi:book-multiple-outline" style="--mdc-icon-size: 14px; flex-shrink: 0; opacity: 0.7;" title="${subtaskTooltip}"></ha-icon>` : ''}
-                        ${task.interval === 0 ? `<ha-icon icon="mdi:numeric-1-circle-outline" style="--mdc-icon-size: 14px; flex-shrink: 0; opacity: 0.7;" title="${this.localize('onetime')}"></ha-icon>` : ''}
-                        ${task.images?.length > 0 ? `<ha-icon icon="mdi:paperclip" style="--mdc-icon-size: 14px; flex-shrink: 0; opacity: 0.7;" title="Task beinhaltet ${task.images.length} Datei${task.images.length !== 1 ? 'en' : ''}"></ha-icon>` : ''}
-                    </div>
-                    <div class="task-meta">${areaName ? areaName + ' • ' : ''}${timeText} • ${task.complexity} ${this.localize('points')}${progressText}</div>
-                    <div class="assignees-icons">${assigneeHtml}</div>
+        <div class="task-item${isTappable ? ' tappable' : ''}" data-id="${task.id}" style="${itemStyle}">
+            <div class="task-badge"><ha-icon icon="${task.icon || 'mdi:broom'}"></ha-icon></div>
+            <div class="task-text">
+                <div class="task-title">
+                    <span ${descTooltip ? `title="${descTooltip}"` : ''}>${task.name}</span>
+                    ${task.interval === 0 ? `<ha-icon icon="mdi:numeric-1-circle-outline" style="--mdc-icon-size: 16px; flex-shrink: 0; opacity: 0.7;" title="${this.localize('onetime')}"></ha-icon>` : ''}
+                    ${task.images?.length > 0 ? `<ha-icon icon="mdi:paperclip" style="--mdc-icon-size: 16px; flex-shrink: 0; opacity: 0.7;" title="Task beinhaltet ${task.images.length} Datei${task.images.length !== 1 ? 'en' : ''}"></ha-icon>` : ''}
+                </div>
+                <div class="task-meta-row">
+                    ${assigneeHtml ? `<div class="assignees-icons">${assigneeHtml}</div>` : ''}
+                    <div class="task-meta" ${subtaskTooltip ? `title="${subtaskTooltip}"` : ''}>${metaText}</div>
                 </div>
             </div>
             <div class="actions">
@@ -2229,6 +2255,15 @@ class TaskOrganizerCardEditor extends HTMLElement {
     return TaskOrganizerCard._localize(this._hass, key);
   }
 
+  /** Pieces the "due tasks" editor replaces. */
+  _defaultTitle() { return this.localize('title'); }
+  _manageHtml() {
+    return `
+          ${renderCheckbox({ label: this.localize('show_edit_lbl'), checked: this._config.show_edit !== false, configValue: 'show_edit' })}
+          ${renderCheckbox({ label: this.localize('show_delete_lbl'), checked: this._config.show_delete !== false, configValue: 'show_delete' })}`;
+  }
+  _extraHtml() { return ''; }
+
   _render() {
     if (!this._config || !this._hass) return;
     if (this._rendered) {
@@ -2243,7 +2278,7 @@ class TaskOrganizerCardEditor extends HTMLElement {
             ${this.localize('help_link')}
           </a>
         </div>
-        <ha-input label="${this.localize('title_lbl')}" value="${this._config.title || this.localize('title')}" configValue="title"></ha-input>
+        <ha-input label="${this.localize('title_lbl')}" value="${this._config.title || this._defaultTitle()}" configValue="title"></ha-input>
         <div style="display: flex; gap: 8px;">
           <ha-input label="${this.localize('height_lbl')}" placeholder="400px" value="${this._config.card_height || ''}" configValue="card_height" style="flex:1"></ha-input>
           <ha-input label="${this.localize('width_lbl')}" placeholder="100%" value="${this._config.card_width || ''}" configValue="card_width" style="flex:1"></ha-input>
@@ -2253,8 +2288,8 @@ class TaskOrganizerCardEditor extends HTMLElement {
         <div style="margin-top: 16px; display: flex; flex-wrap: wrap; gap: 16px;">
           ${renderCheckbox({ label: this.localize('show_search_lbl'), checked: this._config.show_search !== false, configValue: 'show_search' })}
           ${renderCheckbox({ label: this.localize('show_add_lbl'), checked: this._config.show_add !== false, configValue: 'show_add' })}
-          ${renderCheckbox({ label: this.localize('show_edit_lbl'), checked: this._config.show_edit !== false, configValue: 'show_edit' })}
-          ${renderCheckbox({ label: this.localize('show_delete_lbl'), checked: this._config.show_delete !== false, configValue: 'show_delete' })}
+          ${this._manageHtml()}
+          ${this._extraHtml()}
         </div>
 
         <ha-input label="${this.localize('sort_by_lbl')}" placeholder="${this.localize('sort_by_placeholder')}" value="${this._config.sort_by || 'due_date'}" configValue="sort_by" style="width: 100%; margin-top: 16px;"></ha-input>

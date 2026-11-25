@@ -944,6 +944,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     :return: Boolean indicating successful setup.
     """
     hass.data.setdefault(DOMAIN, {})
+
+    # The integration was renamed. Show the new name for entries that were created under the old one.
+    if entry.title == "TaskOrganizer":
+        hass.config_entries.async_update_entry(entry, title="Klusjesbeheer")
+
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
     data = await store.async_load()
     
@@ -1435,6 +1440,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         base_path = "/task_organizer_frontend"
         needed_cards = [
             f"{base_path}/task-organizer-card.js", 
+            f"{base_path}/task-organizer-due.js",
             f"{base_path}/task-organizer-leaderboard.js", 
             f"{base_path}/task-organizer-stats.js", 
             f"{base_path}/task-organizer-settings.js",

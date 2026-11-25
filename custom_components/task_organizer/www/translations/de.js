@@ -1,5 +1,10 @@
 export const de = {
   card: {
+    due_title: "Offene Aufgaben",
+    celebrate_lbl: "Konfetti beim Abschließen",
+    sound_lbl: "Klang beim Abschließen abspielen",
+    sound_url_lbl: "Eigene Klangdatei (URL, optional)",
+    sound_url_placeholder: "/local/chime.mp3",
     add_subtask: "Unteraufgabe hinzufügen",
     add_task_btn: "Aufgabe hinzufügen",
     ago_days: "vor {days} Tage(n)",

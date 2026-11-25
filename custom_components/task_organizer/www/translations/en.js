@@ -1,5 +1,10 @@
 export const en = {
   card: {
+    due_title: "Open Tasks",
+    celebrate_lbl: "Confetti on completion",
+    sound_lbl: "Play chime on completion",
+    sound_url_lbl: "Custom sound file (URL, optional)",
+    sound_url_placeholder: "/local/chime.mp3",
     add_subtask: "Add Subtask",
     add_task_btn: "Add Task",
     repeat_mode_lbl: "Repeat",

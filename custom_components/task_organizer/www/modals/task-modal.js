@@ -295,13 +295,13 @@ export class TaskOrganizerTaskModal extends HTMLElement {
       if (el) el.style.display = visible ? '' : 'none';
     };
     show('f-schedule-block', !this._isOnetime);
+    show('f-interval-row', type === 'interval');
     show('f-schedule-weekday-row', type === 'weekly');
     show('f-schedule-month-row', type === 'quarterly' || type === 'halfyearly' || type === 'yearly');
     show('f-schedule-day-row', type !== 'interval' && type !== 'weekly');
 
-    // With a fixed schedule the "days" field is not used. Its value is kept for switching back.
-    const intervalField = this.shadowRoot.getElementById('f-interval');
-    if (intervalField && !this._isOnetime) intervalField.disabled = (type !== 'interval');
+    // The "days" field only exists for "every X days after completion". With a fixed schedule it is
+    // hidden; its value is kept for switching back.
   }
 
   /**
@@ -1065,8 +1065,6 @@ export class TaskOrganizerTaskModal extends HTMLElement {
               
               <div class="tab-content" id="tab-time">
                   <div style="display:flex; flex-direction:column; gap:16px;">
-                      <ha-input id="f-interval" type="number" min="0" label="${this.localize('interval_lbl')}" style="width:100%;"></ha-input>
-
                       <div id="f-schedule-block" style="display:flex; flex-direction:column; gap:16px;">
                           <div>
                               <label class="form-label">${this.localize('repeat_mode_lbl')}</label>
@@ -1078,6 +1076,9 @@ export class TaskOrganizerTaskModal extends HTMLElement {
                                   <option value="halfyearly">${this.localize('repeat_halfyearly')}</option>
                                   <option value="yearly">${this.localize('repeat_yearly')}</option>
                               </select>
+                          </div>
+                          <div id="f-interval-row">
+                              <ha-input id="f-interval" type="number" min="0" label="${this.localize('interval_lbl')}" style="width:100%;"></ha-input>
                           </div>
                           <div id="f-schedule-weekday-row" style="display:none;">
                               <label class="form-label">${this.localize('weekdays_lbl')}</label>

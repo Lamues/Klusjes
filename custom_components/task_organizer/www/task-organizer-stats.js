@@ -8,7 +8,7 @@ window.customCards = window.customCards || [];
 if (!window.customCards.some(c => c.type === "task-organizer-stats")) {
   window.customCards.push({
     type: "task-organizer-stats",
-    name: "Task Organizer: Reports",
+    name: "Klusjesbeheer: Rapporten",
     description: "Displays graphical reports and point progress charts.",
     preview: true,
   });

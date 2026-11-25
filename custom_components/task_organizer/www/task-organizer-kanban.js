@@ -10,7 +10,7 @@ window.customCards = window.customCards || [];
 if (!window.customCards.some(c => c.type === "task-organizer-kanban")) {
     window.customCards.push({
       type: "task-organizer-kanban",
-      name: "Task Organizer: Kanban Board",
+      name: "Klusjesbeheer: Kanbanbord",
       description: "A custom Kanban board card to display and manage household tasks.",
       preview: true,
     });
