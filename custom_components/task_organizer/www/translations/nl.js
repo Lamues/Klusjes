@@ -109,7 +109,12 @@ export const nl = {
     pick_next_due_btn: "Volgende vervaldatum handmatig kiezen",
     reset_manual_due: "Ongedaan maken",
     manual_due_hint: "Wijzigt alleen de eerstvolgende vervaldatum. Daarna geldt weer het gewone interval of schema.",
-    subtasks_progress: "{done} van {total} klaar"
+    subtasks_progress: "{done} van {total} klaar",
+    due_title: "Openstaande klusjes",
+    celebrate_lbl: "Confetti bij afronden",
+    sound_lbl: "Geluidje afspelen bij afronden",
+    sound_url_lbl: "Eigen geluidsbestand (URL, optioneel)",
+    sound_url_placeholder: "/local/chime.mp3"
   },
   leaderboard: {
     all_time: "Allertijden",
