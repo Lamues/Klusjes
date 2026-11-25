@@ -1,6 +1,7 @@
 const _v = new URLSearchParams(import.meta.url.split('?')[1]).get('v') || Date.now();
 const { localize, renderCheckbox } = await import(`./utils/i18n.js?v=${_v}`);
-const { getEffectiveAssignees } = await import(`./utils/assignees.js?v=${_v}`);
+const { getEffectiveAssignees, getAssigneePool, getExcludedUserIds, withoutExcludedUsers } = await import(`./utils/assignees.js?v=${_v}`);
+const { renderAuditLogHtml, renderAuditLogLoading, renderAuditLogError } = await import(`./utils/audit-log.js?v=${_v}`);
 await import(`./modals/choice-modal.js?v=${_v}`);
 await import(`./modals/subtask-modal.js?v=${_v}`);
 await import(`./modals/task-modal.js?v=${_v}`);
@@ -227,7 +228,13 @@ class TaskOrganizerCard extends HTMLElement {
    * Hooks that the "due tasks" card overrides.
    */
   _defaultTitle() { return this.localize('title'); }
+  /** Users that can be assigned tasks (the ones excluded in the options left out). */
+  _assignableUsers() { return withoutExcludedUsers(this.users, this.settings); }
   _allowManage() { return true; }
+  /** The "no tasks" line. The due card puts the same line in place while the last task disappears. */
+  _emptyHtml() {
+    return `<div class="no-tasks" style="text-align: center; color: var(--secondary-text-color); padding: 10px;">${this.localize('no_tasks')}</div>`;
+  }
   _onlyDue() { return false; }
   _onTaskCompleted(taskId) {}
   _onTaskCompleteFailed(taskId) {}
@@ -261,7 +268,7 @@ class TaskOrganizerCard extends HTMLElement {
     ev.stopPropagation();
     const taskId = target.dataset?.id;
 
-    if (target.id === 'btn-add-task') this.shadowRoot.getElementById('modal-task').open(null, null, this.templates, this.users, this._hass);
+    if (target.id === 'btn-add-task') this.shadowRoot.getElementById('modal-task').open(null, null, this.templates, this._assignableUsers(), this._hass);
     else if (target.id === 'btn-search-toggle') {
         this._searchVisible = !this._searchVisible;
         if (!this._searchVisible) {
@@ -282,7 +289,7 @@ class TaskOrganizerCard extends HTMLElement {
         this._renderTaskList();
     } 
     else if (target.classList?.contains('btn-complete')) this._checkCompleteAction(taskId);
-    else if (target.classList?.contains('btn-edit')) this.shadowRoot.getElementById('modal-task').open(taskId, this.tasks[taskId], this.templates, this.users, this._hass);
+    else if (target.classList?.contains('btn-edit')) this.shadowRoot.getElementById('modal-task').open(taskId, this.tasks[taskId], this.templates, this._assignableUsers(), this._hass);
     else if (target.classList?.contains('btn-delete')) this._deleteTask(taskId);
     else if (target.classList?.contains('suggestion-item')) this._applyTemplate(target.dataset.id);
     else if (target.id === 'btn-prev-page') {
@@ -529,15 +536,15 @@ class TaskOrganizerCard extends HTMLElement {
    */
   _proceedToAssigneeCheck(taskId) {
     const task = this.tasks[taskId];
-    const currentUserId = this._hass.user?.id;
-    let assignees = task.assignees || [];
-    if (typeof assignees === 'string') assignees = [assignees];
+    const pool = getAssigneePool(task, this.settings);
+    const excluded = getExcludedUserIds(this.settings);
+    const responsible = getEffectiveAssignees(task).filter(uid => !excluded.has(uid));
 
-    // Only skip the dialog if the task is assigned EXCLUSIVELY to the current user
-    const isOnlyMe = assignees.length === 1 && assignees[0] === currentUserId;
-
-    if (isOnlyMe) {
-      this._completeTask(taskId, [currentUserId], { [currentUserId]: 100 });
+    // One person assigned: the points go to that person (or to this time's stand-in),
+    // whoever ticks the task off. No need to ask how to share the points.
+    if (pool.length === 1 && responsible.length === 1) {
+      const uid = responsible[0];
+      this._completeTask(taskId, [uid], { [uid]: 100 });
     } else {
       this.shadowRoot.getElementById('modal-choice').open(taskId, this.tasks[taskId], this.users, this._hass, this.settings);
     }
@@ -554,8 +561,9 @@ class TaskOrganizerCard extends HTMLElement {
     
     // Calculate relevant users: assignees + current user
     const taskAssignees = Array.isArray(task.assignees) ? task.assignees : [];
+    const excluded = getExcludedUserIds(this.settings);
     this._activeUids = Object.keys(this.users).filter(uid => 
-        taskAssignees.length === 0 || taskAssignees.includes(uid) || uid === currentUserId
+        !excluded.has(uid) && (taskAssignees.length === 0 || taskAssignees.includes(uid) || uid === currentUserId)
     );
 
     // Initial distribution: current user 100%, others 0%
@@ -1157,20 +1165,15 @@ class TaskOrganizerCard extends HTMLElement {
   _loadTaskHistory(taskId) {
     const container = this.shadowRoot.getElementById('f-history-container');
     if (!container) return;
-    
+    const t = (key, replace = null) => this.localize(key, replace);
+
     if (!taskId) {
-        container.innerHTML = `<div style="text-align: center; color: var(--secondary-text-color); padding: 16px;">${this.localize ? (this.localize('no_history') || 'Keine Historie vorhanden') : 'Keine Historie vorhanden'}</div>`;
+        container.innerHTML = renderAuditLogHtml([], this.users, t, this._hass);
         return;
     }
-    
-    // Set loading indicator
-    container.innerHTML = `
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; color: var(--secondary-text-color);">
-            <ha-circular-progress active size="medium"></ha-circular-progress>
-            <div style="margin-top: 8px; font-size: 14px;">Lade Historie...</div>
-        </div>
-    `;
-    
+
+    container.innerHTML = renderAuditLogLoading(t);
+
     this._hass.callWS({
         type: 'task_organizer/get_task_audit_log',
         task_id: taskId
@@ -1178,140 +1181,14 @@ class TaskOrganizerCard extends HTMLElement {
         this._renderAuditLog(container, response.history || []);
     }).catch(err => {
         console.error("Error loading task history:", err);
-        container.innerHTML = `<div style="text-align: center; color: var(--error-color); padding: 16px;">Fehler beim Laden der Historie</div>`;
+        container.innerHTML = renderAuditLogError(t);
     });
   }
 
   _renderAuditLog(container, taskHistory) {
-    if (taskHistory.length === 0) {
-        container.innerHTML = `<div style="text-align: center; color: var(--secondary-text-color); padding: 16px;">${this.localize ? (this.localize('no_history') || 'Noch keine Historie für diese Aufgabe') : 'Noch keine Historie für diese Aufgabe'}</div>`;
-        return;
-    }
-    
-    let html = '<div class="history-timeline">';
-    taskHistory.forEach(entry => {
-        const dateStr = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Unbekannt';
-        const userName = entry.user_id && this.users ? (this.users[entry.user_id] || entry.user_id) : 'Unbekannt';
-        
-        let title = '';
-        let detailsHtml = '';
-        let icon = '';
-        let color = '';
-        
-        if (entry.action === 'created') {
-            title = 'Aufgabe erstellt';
-            icon = 'mdi:plus-circle';
-            color = 'var(--info-color, #2196f3)';
-        } else if (entry.action === 'edited') {
-            title = 'Aufgabe bearbeitet';
-            icon = 'mdi:text-box-edit-outline';
-            color = 'var(--primary-color, #03a9f4)';
-            
-            const keyMap = {
-                'name': 'Name', 'description': 'Beschreibung', 'area': 'Bereich',
-                'interval': 'Intervall', 'assignees': 'Bearbeiter', 'complexity': 'Punkte',
-                'category': 'Kategorie', 'icon': 'Icon', 'subtasks': 'Unteraufgaben',
-                'images': 'Bilder', 'due_date': 'Fälligkeitsdatum', 'paused_until': 'Pausiert bis',
-                'override_overdue_days': 'Überfälligkeit (Tage)'
-            };
-            
-            const changes = entry.details?.changes;
-            if (changes && Object.keys(changes).length > 0) {
-                detailsHtml = '<div style="margin-top: 8px; font-size: 12px; background: rgba(0,0,0,0.1); padding: 6px; border-radius: 4px;">';
-                for (const [key, diff] of Object.entries(changes)) {
-                    const translatedKey = keyMap[key] || key;
-                    if (key === 'subtasks') {
-                        const oldSubtasks = diff.old || [];
-                        const newSubtasks = diff.new || [];
-                        let completedSubtasks = [];
-                        let addedSubtasks = [];
-                        
-                        newSubtasks.forEach(st => {
-                            const oldSt = oldSubtasks.find(o => o.title === st.title);
-                            if (oldSt) {
-                                if (st.done && !oldSt.done) {
-                                    completedSubtasks.push(st.title);
-                                }
-                            } else {
-                                addedSubtasks.push(st.title);
-                            }
-                        });
-                        
-                        if (completedSubtasks.length > 0 || addedSubtasks.length > 0) {
-                            if (completedSubtasks.length > 0) {
-                                completedSubtasks.forEach(stTitle => {
-                                    detailsHtml += `<div style="margin-bottom: 2px; color: var(--success-color, #4caf50);">• <b>Unteraufgabe:</b> <s>${stTitle}</s> abgeschlossen <ha-icon icon="mdi:check-circle" style="--mdc-icon-size: 12px; margin-left: 2px;"></ha-icon></div>`;
-                                });
-                                // If ONLY subtasks were completed, change the main timeline event to reflect this
-                                if (Object.keys(changes).length === 1 && addedSubtasks.length === 0) {
-                                    title = userName !== 'Unbekannt' ? `${userName} hat Unteraufgaben abgeschlossen` : 'Unteraufgaben abgeschlossen';
-                                    icon = 'mdi:check-circle-outline';
-                                    color = 'var(--success-color, #4caf50)';
-                                }
-                            }
-                            if (addedSubtasks.length > 0) {
-                                addedSubtasks.forEach(stTitle => {
-                                    detailsHtml += `<div style="margin-bottom: 2px;">• <b>Unteraufgabe:</b> ${stTitle} hinzugefügt</div>`;
-                                });
-                            }
-                        } else {
-                            detailsHtml += `<div style="margin-bottom: 2px;">• <b>${translatedKey}</b> geändert</div>`;
-                        }
-                    } else if (key === 'images' || key === 'assignees') {
-                        detailsHtml += `<div style="margin-bottom: 2px;">• <b>${translatedKey}</b> geändert</div>`;
-                    } else {
-                        const oldVal = diff.old !== null ? String(diff.old) : 'leer';
-                        const newVal = diff.new !== null ? String(diff.new) : 'leer';
-                        detailsHtml += `<div style="margin-bottom: 2px;">• <b>${translatedKey}</b>: <s>${oldVal}</s> → ${newVal}</div>`;
-                    }
-                }
-                detailsHtml += '</div>';
-            }
-        } else if (entry.action === 'completed') {
-            const usersWithPoints = entry.details?.users_with_points;
-            
-            if (usersWithPoints && Object.keys(usersWithPoints).length > 1) {
-                title = 'Aufgabe gemeinsam abgeschlossen';
-                let usersListHtml = '';
-                for (const [uId, pts] of Object.entries(usersWithPoints)) {
-                    const uName = this.users && this.users[uId] ? this.users[uId] : uId;
-                    usersListHtml += `<div style="margin-bottom: 2px;">• <b>${uName}</b>: +${pts} Punkte</div>`;
-                }
-                detailsHtml = `<div style="margin-top: 8px; font-size: 12px; background: rgba(0,0,0,0.1); padding: 6px; border-radius: 4px;">${usersListHtml}</div>`;
-            } else {
-                title = userName !== 'Unbekannt' ? `${userName} hat die Aufgabe abgeschlossen` : 'Aufgabe abgeschlossen';
-                if (entry.details?.points) {
-                    detailsHtml = `<div class="timeline-points" style="color: var(--success-color, #4caf50)">+${entry.details.points} Punkte</div>`;
-                }
-            }
-            icon = 'mdi:check-circle';
-            color = 'var(--success-color, #4caf50)';
-        } else {
-            title = 'Aktion: ' + entry.action;
-            icon = 'mdi:information';
-            color = 'var(--secondary-text-color)';
-        }
-        
-        html += `
-            <div class="timeline-item">
-                <div class="timeline-marker" style="background-color: ${color}; border-color: var(--card-background-color);">
-                    <ha-icon icon="${icon}" style="--mdc-icon-size: 16px; color: white; display: flex; align-items: center; justify-content: center;"></ha-icon>
-                </div>
-                <div class="timeline-content">
-                    <div class="timeline-date">${dateStr}${userName !== 'Unbekannt' ? ' • ' + userName : ''}</div>
-                    <div class="timeline-title">${title}</div>
-                    ${detailsHtml}
-                </div>
-            </div>
-        `;
-    });
-    html += '</div>';
-    container.innerHTML = html;
+    container.innerHTML = renderAuditLogHtml(taskHistory, this.users, (key, replace = null) => this.localize(key, replace), this._hass);
   }
 
-  /**
-   * Closes the task editor modal.
-   */
   _closeModal() { 
       this.shadowRoot.getElementById('task-modal').classList.remove('open'); 
   }
@@ -1571,13 +1448,14 @@ class TaskOrganizerCard extends HTMLElement {
           @media (hover: hover) { .task-item:hover { background-color: color-mix(in srgb, var(--status-color), transparent var(--status-transparency-hover, 85%)); box-shadow: 0 2px 8px rgba(0,0,0,0.12); } }
           .task-item.tappable { cursor: pointer; }
           .task-item.tappable:active { background-color: color-mix(in srgb, var(--status-color), transparent var(--status-transparency-hover, 85%)); transform: scale(0.99); }
-          .task-badge { flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary-text-color); background: color-mix(in srgb, var(--status-color) 22%, transparent); --mdc-icon-size: 24px; }
+          .task-badge { flex-shrink: 0; width: 48px; height: 48px; box-sizing: border-box; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--primary-text-color); background: color-mix(in srgb, var(--status-color) 22%, transparent); --mdc-icon-size: 26px; }
+          .standin-icon { --mdc-icon-size: 16px; color: var(--secondary-text-color); flex-shrink: 0; margin-left: 4px; }
           .task-text { flex: 1; min-width: 0; word-break: break-word; text-align: left; display: flex; flex-direction: column; gap: 5px; }
           .task-title { color: var(--primary-text-color); font-weight: 600; margin: 0; font-size: 18px; line-height: 1.25; display: flex; align-items: center; gap: 6px; overflow: hidden; }
           .task-title span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; word-break: break-word; }
           .task-meta-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
           .task-meta { font-size: 13px; line-height: 1.3; color: var(--secondary-text-color); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-          .assignees-icons { display: flex; flex-shrink: 0; }
+          .assignees-icons { display: flex; align-items: center; flex-shrink: 0; }
           .assignees-icons .mini-avatar + .mini-avatar { margin-left: -6px; }
           .mini-avatar { position: relative; overflow: hidden; box-sizing: border-box; width: 24px; height: 24px; border-radius: 50%; background: var(--secondary-text-color); color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; text-transform: uppercase; box-shadow: 0 0 0 2px var(--card-background-color, #fff); }
           .mini-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -2086,7 +1964,7 @@ class TaskOrganizerCard extends HTMLElement {
     let html = `<div class="task-list">`;
 
     if (taskArray.length === 0) {
-      html += `<div style="text-align: center; color: var(--secondary-text-color); padding: 10px;">${this.localize('no_tasks')}</div>`;
+      html += this._emptyHtml();
     }
     
     paginatedTasks.forEach(task => {
@@ -2151,6 +2029,9 @@ class TaskOrganizerCard extends HTMLElement {
       }
       
       let assigneesList = getEffectiveAssignees(task);
+      const assigneePool = getAssigneePool(task, this.settings);
+      const isSingleAssignee = assigneePool.length === 1;
+      const standInFrom = (isSingleAssignee && task.stand_in && task.stand_in !== assigneePool[0]) ? assigneePool[0] : null;
       const assigneeHtml = assigneesList.map(uid => {
           const picture = this.userPictures && this.userPictures[uid];
           // The picture covers the initial. If it fails to load it removes itself and the initial shows again.
@@ -2159,7 +2040,7 @@ class TaskOrganizerCard extends HTMLElement {
           <div class="mini-avatar" title="${this.users[uid] || this.localize('unknown')}">
               <span>${(this.users[uid] || '?').charAt(0).toUpperCase()}</span>${pictureHtml}
           </div>`;
-      }).join('');
+      }).join('') + (standInFrom ? `<ha-icon class="standin-icon" icon="mdi:account-switch" title="${this.localize('standin_hint', { name: this.users[standInFrom] || this.localize('unknown') })}"></ha-icon>` : '');
 
       // Subtask Progress Logic
       let progressText = "";
@@ -2193,7 +2074,7 @@ class TaskOrganizerCard extends HTMLElement {
       const metaText = `${areaName ? areaName + ' • ' : ''}${timeText} • ${task.complexity} ${this.localize('points')}${progressText}`;
 
       html += `
-        <div class="task-item${isTappable ? ' tappable' : ''}" data-id="${task.id}" style="${itemStyle}">
+        <div class="task-item${isTappable ? ' tappable' : ''}" data-id="${task.id}"${isSingleAssignee ? ' data-single="1"' : ''} style="${itemStyle}">
             <div class="task-badge"><ha-icon icon="${task.icon || 'mdi:broom'}"></ha-icon></div>
             <div class="task-text">
                 <div class="task-title">

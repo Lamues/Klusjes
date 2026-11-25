@@ -713,7 +713,7 @@ class TaskOrganizerStats extends HTMLElement {
       if (this._hass.user && this._hass.user.id && this.users[this._hass.user.id]) {
         this._selectedUserId = this._hass.user.id;
       } else {
-        this._selectedUserId = Object.keys(this.users)[0];
+        this._selectedUserId = Object.keys(this.users).filter(uid => !new Set([].concat(this.settings?.excluded_users || [])).has(uid))[0] || Object.keys(this.users)[0];
       }
     }
 
@@ -727,7 +727,7 @@ class TaskOrganizerStats extends HTMLElement {
     if (showUserSelect) {
       html += `
         <select id="user-select">
-          ${Object.entries(this.users).map(([uid, name]) => `<option value="${uid}" ${this._selectedUserId === uid ? 'selected' : ''}>${name}</option>`).join('')}
+          ${Object.entries(this.users).filter(([uid]) => !new Set([].concat(this.settings?.excluded_users || [])).has(uid)).map(([uid, name]) => `<option value="${uid}" ${this._selectedUserId === uid ? 'selected' : ''}>${name}</option>`).join('')}
         </select>`;
     }
 

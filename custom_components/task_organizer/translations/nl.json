@@ -15,11 +15,14 @@
       "init": {
         "title": "Klusjes instellingen",
         "data": {
-          "overdue_days": "Dagen tot klus te laat afgerond is",
+          "excluded_users": "Gebruikers die nooit klusjes of punten krijgen",
           "color_done": "Kleur: Afgerond (Hex-code)",
           "point_goals": "Maandelijkse Punten Doelen",
           "color_due": "Kleur: Nodig (Hex-code)",
           "color_overdue": "Kleur: Te laat (Hex-code)"
+        },
+        "data_description": {
+          "excluded_users": "Bijvoorbeeld gedeelde wandtablets. Ze worden niet aangeboden bij het toewijzen van klusjes of het verdelen van punten."
         }
       }
     }

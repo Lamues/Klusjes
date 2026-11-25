@@ -6,14 +6,15 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import selector
 
 from .const import (
     DOMAIN,
     DEFAULT_COLOR_DONE,
     DEFAULT_COLOR_DUE,
     DEFAULT_COLOR_OVERDUE,
-    DEFAULT_OVERDUE_DAYS,
 )
+from .exclusions import CONF_EXCLUDED_USERS
 
 
 class TaskOrganizerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -56,8 +57,26 @@ class TaskOrganizerOptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=options)
 
         options = self.config_entry.options
+
+        # People who can be excluded: every real Home Assistant user (not the built-in system users).
+        # "Days until overdue" is not here: it is set on the Settings card.
+        users = []
+        for user in await self.hass.auth.async_get_users():
+            if user.system_generated or not user.is_active:
+                continue
+            users.append(selector.SelectOptionDict(value=user.id, label=user.name or user.id))
+        users.sort(key=lambda o: str(o["label"]).casefold())
+        known = {o["value"] for o in users}
+        current = [uid for uid in (options.get(CONF_EXCLUDED_USERS) or []) if uid in known]
+
         data_schema = vol.Schema({
-            vol.Optional("overdue_days", default=options.get("overdue_days", DEFAULT_OVERDUE_DAYS)): int,
+            vol.Optional(CONF_EXCLUDED_USERS, default=current): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=users,
+                    multiple=True,
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            ),
             vol.Optional("color_done", default=options.get("color_done", DEFAULT_COLOR_DONE)): str,
             vol.Optional("color_due", default=options.get("color_due", DEFAULT_COLOR_DUE)): str,
             vol.Optional("color_overdue", default=options.get("color_overdue", DEFAULT_COLOR_OVERDUE)): str,

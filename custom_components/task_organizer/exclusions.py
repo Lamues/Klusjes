@@ -1,36 +1,25 @@
-"""Users that can never be awarded points (e.g. shared wall tablets)."""
-from __future__ import annotations
+"""Users that never take part: they cannot be assigned tasks and never receive points.
 
-import logging
+Chosen in the integration options ("excluded_users"), e.g. shared wall tablets.
+"""
+from __future__ import annotations
 
 from homeassistant.core import HomeAssistant
 
-_LOGGER = logging.getLogger(__name__)
+from .const import DOMAIN
 
-# Hard-coded on purpose. Compared case-insensitively with the Home Assistant
-# user name and with the name of the linked person. Keep in sync with
-# www/utils/assignees.js.
-EXCLUDED_POINT_USER_NAMES = {"echo 8", "echo 5"}
+CONF_EXCLUDED_USERS = "excluded_users"
 
 
-def _normalize(name: object) -> str:
-    return str(name or "").strip().casefold()
+def get_excluded_user_ids(hass: HomeAssistant) -> set[str]:
+    """Return the user IDs that are excluded in the options."""
+    settings = (hass.data.get(DOMAIN, {}).get("data") or {}).get("settings") or {}
+    value = settings.get(CONF_EXCLUDED_USERS) or []
+    if isinstance(value, str):
+        value = [value]
+    return {str(uid) for uid in value if uid}
 
 
 async def async_get_excluded_user_ids(hass: HomeAssistant) -> set[str]:
-    """Return the user IDs that must never receive points."""
-    excluded: set[str] = set()
-
-    for state in hass.states.async_all("person"):
-        user_id = state.attributes.get("user_id")
-        if user_id and _normalize(state.attributes.get("friendly_name")) in EXCLUDED_POINT_USER_NAMES:
-            excluded.add(user_id)
-
-    try:
-        for user in await hass.auth.async_get_users():
-            if _normalize(user.name) in EXCLUDED_POINT_USER_NAMES:
-                excluded.add(user.id)
-    except Exception as err:  # pragma: no cover - never block a completion on this
-        _LOGGER.debug("Could not look up users for the points exclusion: %s", err)
-
-    return excluded
+    """Async wrapper, kept so existing callers do not change."""
+    return get_excluded_user_ids(hass)

@@ -15,6 +15,7 @@ window.customCards.push({
   preview: true,
 });
 
+const LONG_PRESS_MS = 550;    // press and hold this long to open the "who does it this time" menu
 const HOLD_MS = 950;          // how long a completed entry stays visible for the celebration
 const HOLD_REDUCED_MS = 350;  // the same for people who prefer reduced motion
 const EXIT_MS = 400;          // length of the disappearing animation
@@ -32,6 +33,32 @@ class KlusjesbeheerDueCard extends BaseCard {
     this._audioCtx = null;
     // Browsers only allow sound after the person has touched the page. Touching the card is enough to unlock it.
     this.addEventListener('pointerdown', () => this._primeAudio(), { passive: true });
+
+    // Press and hold a task with one assignee: let somebody else do it this one time.
+    this._lpTimer = null;
+    this._lpFired = false;
+    this._lpSuppressUntil = 0;
+    const root = this.shadowRoot;
+    root.addEventListener('pointerdown', (ev) => this._lpStart(ev), { passive: true });
+    root.addEventListener('pointermove', (ev) => this._lpMove(ev), { passive: true });
+    root.addEventListener('pointerup', () => {
+      // Releasing a long press may still produce a click; ignore only that one (it comes right away).
+      if (this._lpFired) { this._lpFired = false; this._lpSuppressUntil = Date.now() + 400; }
+      this._lpCancel();
+    }, { passive: true });
+    root.addEventListener('pointercancel', () => this._lpCancel(), { passive: true });
+    // The tap that ends a long press must not also tick the task off or open a popup.
+    root.addEventListener('click', (ev) => {
+      if (this._lpFired || Date.now() < this._lpSuppressUntil) {
+        this._lpFired = false;
+        this._lpSuppressUntil = 0;
+        ev.stopPropagation();
+        ev.preventDefault();
+      }
+    }, true);
+    root.addEventListener('contextmenu', (ev) => {
+      if (ev.composedPath().some(el => el.classList && el.classList.contains('task-item'))) ev.preventDefault();
+    });
   }
 
   static getConfigElement() {
@@ -68,6 +95,24 @@ class KlusjesbeheerDueCard extends BaseCard {
           @keyframes to-tick { 0% { transform: scale(0.4) rotate(-25deg); opacity: 0; } 60% { opacity: 1; } 100% { transform: scale(1) rotate(0); } }
           @keyframes to-ring { 0% { transform: scale(1); opacity: 0.9; } 100% { transform: scale(1.5); opacity: 0; } }
           @media (prefers-reduced-motion: reduce) { .task-item.celebrating .btn-complete, .task-item.celebrating .btn-complete ha-icon, .task-item.celebrating .btn-complete::after { animation: none; } }
+          .task-item { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+          .task-item.pressing { transform: scale(0.97); transition: transform ${LONG_PRESS_MS}ms ease-out, background-color 0.2s; }
+          .sm-backdrop { position: fixed; inset: 0; z-index: 5000; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; animation: sm-fade 0.15s ease-out; }
+          .sm-dialog { background: var(--card-background-color, #fff); color: var(--primary-text-color); border-radius: var(--ha-card-border-radius, 16px); width: min(440px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); animation: sm-pop 0.18s ease-out; }
+          .sm-title { font-size: 20px; font-weight: 600; margin: 0; }
+          .sm-task { font-size: 14px; color: var(--secondary-text-color); margin-top: 2px; }
+          .sm-desc { font-size: 14px; color: var(--secondary-text-color); line-height: 1.4; }
+          .sm-list { display: flex; flex-direction: column; gap: 8px; }
+          .sm-row { display: flex; align-items: center; gap: 14px; min-height: 60px; padding: 8px 14px; border-radius: 12px; border: 1px solid var(--divider-color); background: transparent; color: var(--primary-text-color); font: inherit; font-size: 17px; text-align: left; cursor: pointer; width: 100%; box-sizing: border-box; }
+          .sm-row:active { background: var(--secondary-background-color); }
+          .sm-row .mini-avatar { width: 40px; height: 40px; font-size: 16px; box-shadow: none; flex-shrink: 0; }
+          .sm-row.sm-reset { border-style: dashed; }
+          .sm-row ha-icon { --mdc-icon-size: 24px; color: var(--secondary-text-color); margin-left: auto; }
+          .sm-empty { font-size: 14px; color: var(--secondary-text-color); padding: 8px 0; }
+          .sm-foot { display: flex; justify-content: flex-end; }
+          .sm-cancel { background: transparent; border: none; color: var(--primary-color); font: inherit; font-size: 15px; font-weight: 500; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
+          @keyframes sm-fade { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes sm-pop { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
     `;
     return super._getStyles().replace('</style>', extra + '</style>');
   }
@@ -139,9 +184,37 @@ class KlusjesbeheerDueCard extends BaseCard {
     super._renderTaskList();
   }
 
+  /**
+   * When the last task leaves, the "no tasks" line is put in place at the same time, so the card
+   * shrinks once, smoothly, instead of collapsing fully and growing again.
+   */
+  _insertEmptyLine(entries, gap) {
+    const list = this.shadowRoot.querySelector('.task-list');
+    if (!list) return null;
+    const others = [...list.querySelectorAll('.task-item')].filter(el => !entries.includes(el));
+    if (others.length > 0 || list.querySelector('.no-tasks')) return null;
+
+    const holder = document.createElement('div');
+    holder.innerHTML = this._emptyHtml();
+    const line = holder.firstElementChild;
+    if (!line) return null;
+    list.appendChild(line);
+    const h = line.offsetHeight;
+    const cs = getComputedStyle(line);
+    line.style.boxSizing = 'border-box';
+    line.style.overflow = 'hidden';
+    // The negative top margin cancels the list gap, so adding the line does not make the card taller.
+    return line.animate([
+      { height: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: `-${gap}px`, opacity: 0 },
+      { opacity: 0, offset: 0.45 },
+      { height: `${h}px`, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, marginTop: '0px', opacity: 1 }
+    ], { duration: EXIT_MS, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' });
+  }
+
   /** Fades the entry out and lets the ones below slide up. */
   _playExit(entries) {
     const gap = 10;
+    const emptyLine = this._insertEmptyLine(entries, gap);
     const animations = entries.map(el => {
       const h = el.offsetHeight;
       return el.animate([
@@ -150,7 +223,112 @@ class KlusjesbeheerDueCard extends BaseCard {
         { height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px', borderTopWidth: '0px', borderBottomWidth: '0px', opacity: 0, transform: 'translateX(28px) scale(0.96)', marginBottom: `-${gap}px` }
       ], { duration: EXIT_MS, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' });
     });
+    if (emptyLine) animations.push(emptyLine);
     return Promise.all(animations.map(a => a.finished.catch(() => {})));
+  }
+
+  // --- press and hold: somebody else does it this time -------------------------------------
+  _lpStart(ev) {
+    this._lpFired = false;
+    this._lpSuppressUntil = 0;
+    if (ev.button > 0 || this._holding) return;
+    const entry = ev.composedPath().find(el => el.classList && el.classList.contains('task-item'));
+    if (!entry || !entry.dataset.single || entry.classList.contains('celebrating')) return;
+    this._lpCancel();
+    this._lpEntry = entry;
+    this._lpX = ev.clientX;
+    this._lpY = ev.clientY;
+    entry.classList.add('pressing');
+    this._lpTimer = setTimeout(() => {
+      this._lpTimer = null;
+      entry.classList.remove('pressing');
+      this._lpFired = true;
+      try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) { /* not supported */ }
+      this._openStandIn(entry.dataset.id);
+    }, LONG_PRESS_MS);
+  }
+
+  _lpMove(ev) {
+    if (!this._lpTimer) return;
+    if (Math.abs(ev.clientX - this._lpX) > 10 || Math.abs(ev.clientY - this._lpY) > 10) this._lpCancel();
+  }
+
+  _lpCancel() {
+    if (this._lpTimer) { clearTimeout(this._lpTimer); this._lpTimer = null; }
+    if (this._lpEntry) { this._lpEntry.classList.remove('pressing'); this._lpEntry = null; }
+  }
+
+  _avatarHtml(uid) {
+    const name = this.users[uid] || this.localize('unknown');
+    const picture = this.userPictures && this.userPictures[uid];
+    const pictureHtml = picture ? `<img src="${String(picture).replace(/"/g, '&quot;')}" alt="" onerror="this.remove()">` : '';
+    return `<div class="mini-avatar"><span>${name.charAt(0).toUpperCase()}</span>${pictureHtml}</div>`;
+  }
+
+  _openStandIn(taskId) {
+    const task = this.tasks && this.tasks[taskId];
+    if (!task) return;
+    const pool = (Array.isArray(task.assignees) ? task.assignees : [task.assignees]).filter(Boolean);
+    if (pool.length !== 1) return;
+    const owner = pool[0];
+    const ownerName = this.users[owner] || this.localize('unknown');
+    const standIn = task.stand_in && task.stand_in !== owner ? task.stand_in : null;
+
+    const candidates = Object.keys(this._assignableUsers())
+      .filter(uid => uid !== owner && uid !== standIn)
+      .sort((a, b) => String(this.users[a]).localeCompare(String(this.users[b])));
+
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    let rows = '';
+    if (standIn) {
+      rows += `<button class="sm-row sm-reset" data-uid="">${this._avatarHtml(owner)}<span>${esc(this.localize('standin_reset', { name: ownerName }))}</span><ha-icon icon="mdi:undo-variant"></ha-icon></button>`;
+    }
+    rows += candidates.map(uid => `<button class="sm-row" data-uid="${esc(uid)}">${this._avatarHtml(uid)}<span>${esc(this.users[uid])}</span><ha-icon icon="mdi:account-switch"></ha-icon></button>`).join('');
+    if (!rows) rows = `<div class="sm-empty">${esc(this.localize('standin_none'))}</div>`;
+
+    this._closeStandIn();
+    const modal = document.createElement('div');
+    modal.className = 'sm-backdrop';
+    modal.id = 'standin-modal';
+    modal.innerHTML = `
+      <div class="sm-dialog" role="dialog" aria-modal="true">
+        <div>
+          <div class="sm-title">${esc(this.localize('standin_title'))}</div>
+          <div class="sm-task">${esc(task.name)}</div>
+        </div>
+        <div class="sm-desc">${esc(this.localize('standin_desc', { name: ownerName }))}</div>
+        <div class="sm-list">${rows}</div>
+        <div class="sm-foot"><button class="sm-cancel">${esc(this.localize('cancel'))}</button></div>
+      </div>`;
+    // Clicks inside the popup are handled here and never reach the card's own click handling.
+    modal.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (ev.target === modal) { this._closeStandIn(); return; }
+      const path = ev.composedPath();
+      if (path.some(el => el.classList && el.classList.contains('sm-cancel'))) { this._closeStandIn(); return; }
+      const row = path.find(el => el.classList && el.classList.contains('sm-row'));
+      if (row) this._setStandIn(taskId, row.dataset.uid || null, owner);
+    });
+    this.shadowRoot.appendChild(modal);
+  }
+
+  _closeStandIn() {
+    const m = this.shadowRoot.getElementById('standin-modal');
+    if (m) m.remove();
+  }
+
+  _setStandIn(taskId, uid, owner) {
+    this._closeStandIn();
+    this._hass.callWS({ type: 'task_organizer/set_stand_in', task_id: taskId, user_id: uid })
+      .then(() => {
+        const name = this.users[uid || owner] || this.localize('unknown');
+        this._showToast(this.localize(uid ? 'standin_saved' : 'standin_cleared', { name }));
+        this._fetchData();
+      })
+      .catch(err => {
+        console.error('Klusjesbeheer: could not change who does the task', err);
+        this._showToast(String((err && err.message) || err));
+      });
   }
 
   // --- confetti ----------------------------------------------------------------------------

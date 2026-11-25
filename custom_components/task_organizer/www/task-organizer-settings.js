@@ -242,7 +242,7 @@ class TaskOrganizerSettings extends HTMLElement {
   _distributeGoals() {
     const requiredPoints = this._getRequiredPoints();
 
-    const userKeys = Object.keys(this.users);
+    const userKeys = Object.keys(this._assignableUsers());
     if (userKeys.length === 0 || requiredPoints === 0) return;
 
     const pointsPerUser = Math.ceil(requiredPoints / userKeys.length);
@@ -258,6 +258,12 @@ class TaskOrganizerSettings extends HTMLElement {
   /**
    * Gathers modified settings from the UI and saves them via websocket.
    */
+  _assignableUsers() {
+    // Users excluded in the integration options never take part (no tasks, no points goals)
+    const excluded = new Set([].concat(this.settings?.excluded_users || []));
+    return Object.fromEntries(Object.entries(this.users || {}).filter(([uid]) => !excluded.has(uid)));
+  }
+
   _saveSettings() {
     const pointGoals = {};
     this.shadowRoot.querySelectorAll('.user-goal-input').forEach(input => {
@@ -967,7 +973,7 @@ class TaskOrganizerSettings extends HTMLElement {
             </div>
           </div>
           <div class="section-content ${this._goalsOpen ? 'open' : ''}" id="goals-content">
-            ${Object.entries(this.users).map(([uid, name]) => `
+            ${Object.entries(this._assignableUsers()).map(([uid, name]) => `
               <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-weight: 500; font-size: 14px; color: var(--primary-text-color);">${name}</span>
                 <input type="number" class="user-goal-input" data-uid="${uid}" min="0" 
@@ -1023,7 +1029,7 @@ class TaskOrganizerSettings extends HTMLElement {
               <div>
                   <label class="form-label">${this.localize('assignees_lbl')}</label>
                   <div style="display:flex; flex-direction:column; gap:8px; padding-top:8px;">
-                      ${Object.entries(this.users).map(([uid, name]) => {
+                      ${Object.entries(this._assignableUsers()).map(([uid, name]) => {
         const isChecked = template?.assignees?.includes(uid) || false;
         return renderCheckbox({ label: name, className: 'tmpl-assignee-cb', value: uid, checked: isChecked });
       }).join('')}

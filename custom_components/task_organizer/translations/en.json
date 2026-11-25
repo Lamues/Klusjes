@@ -15,11 +15,14 @@
       "init": {
         "title": "Klusjesbeheer Settings",
         "data": {
-          "overdue_days": "Days until overdue",
+          "excluded_users": "Users who never get tasks or points",
           "color_done": "Color: Done (Hex Code)",
           "point_goals": "Monthly Point Goals",
           "color_due": "Color: Due (Hex Code)",
           "color_overdue": "Color: Overdue (Hex Code)"
+        },
+        "data_description": {
+          "excluded_users": "For example shared wall tablets. They are not offered when assigning tasks or sharing points."
         }
       }
     }

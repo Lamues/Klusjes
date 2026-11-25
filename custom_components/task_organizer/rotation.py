@@ -49,6 +49,10 @@ def get_effective_assignees(task: dict[str, Any]) -> list[str]:
     """
     pool = _pool(task)
     if len(pool) < 2:
+        # Somebody can take over a single-assignee task for one time ("stand_in").
+        stand_in = task.get("stand_in")
+        if stand_in and pool:
+            return [stand_in]
         return pool
 
     current = task.get("current_assignee")

@@ -1,6 +1,6 @@
 const _v = new URLSearchParams(import.meta.url.split('?')[1]).get('v') || Date.now();
 const { localize } = await import(`../utils/i18n.js?v=${_v}`);
-const { getEffectiveAssignees, isPointExcludedUser } = await import(`../utils/assignees.js?v=${_v}`);
+const { getEffectiveAssignees, getExcludedUserIds } = await import(`../utils/assignees.js?v=${_v}`);
 
 export class TaskOrganizerChoiceModal extends HTMLElement {
   constructor() {
@@ -29,9 +29,10 @@ export class TaskOrganizerChoiceModal extends HTMLElement {
     const currentUserId = this._hass.user?.id;
     const taskAssignees = Array.isArray(task.assignees) ? task.assignees : [];
     
-    // Users that can never be awarded points (e.g. the wall tablets) are not offered at all
+    // Users excluded in the integration options (e.g. the wall tablets) are not offered at all
+    const excluded = getExcludedUserIds(settings);
     this._activeUids = Object.keys(this._users).filter(uid => 
-        !isPointExcludedUser(this._users[uid]) &&
+        !excluded.has(uid) &&
         (taskAssignees.length === 0 || taskAssignees.includes(uid) || uid === currentUserId)
     );
 

@@ -1,5 +1,6 @@
 const _v = new URLSearchParams(import.meta.url.split('?')[1]).get('v') || Date.now();
 const { localize, renderCheckbox, renderSwitch } = await import(`../utils/i18n.js?v=${_v}`);
+const { renderAuditLogHtml, renderAuditLogLoading, renderAuditLogError } = await import(`../utils/audit-log.js?v=${_v}`);
 const { nextOccurrence, toYMD, weekdaysOf } = await import(`../utils/schedule.js?v=${_v}`);
 const { getEffectiveAssignees } = await import(`../utils/assignees.js?v=${_v}`);
 
@@ -563,19 +564,15 @@ export class TaskOrganizerTaskModal extends HTMLElement {
   _loadTaskHistory(taskId) {
     const container = this.shadowRoot.getElementById('f-history-container');
     if (!container) return;
-    
+    const t = (key, replace = null) => this.localize(key, replace);
+
     if (!taskId) {
-        container.innerHTML = `<div style="text-align: center; color: var(--secondary-text-color); padding: 16px;">${this.localize('no_history')}</div>`;
+        container.innerHTML = renderAuditLogHtml([], this._historyUserNames(), t, this._hass);
         return;
     }
-    
-    container.innerHTML = `
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; color: var(--secondary-text-color);">
-            <ha-circular-progress active size="medium"></ha-circular-progress>
-            <div style="margin-top: 8px; font-size: 14px;">Lade Historie...</div>
-        </div>
-    `;
-    
+
+    container.innerHTML = renderAuditLogLoading(t);
+
     this._hass.callWS({
         type: 'task_organizer/get_task_audit_log',
         task_id: taskId
@@ -583,133 +580,24 @@ export class TaskOrganizerTaskModal extends HTMLElement {
         this._renderAuditLog(container, response.history || []);
     }).catch(err => {
         console.error("Error loading task history:", err);
-        container.innerHTML = `<div style="text-align: center; color: var(--error-color); padding: 16px;">Fehler beim Laden der Historie</div>`;
+        container.innerHTML = renderAuditLogError(t);
     });
   }
 
-  _renderAuditLog(container, taskHistory) {
-    if (taskHistory.length === 0) {
-        container.innerHTML = `<div style="text-align: center; color: var(--secondary-text-color); padding: 16px;">${this.localize('no_history')}</div>`;
-        return;
+  /** Names of everybody (also users excluded from tasks), so old history entries keep their names. */
+  _historyUserNames() {
+    const names = { ...(this._users || {}) };
+    const states = (this._hass && this._hass.states) || {};
+    for (const [entityId, state] of Object.entries(states)) {
+      if (entityId.startsWith('person.') && state.attributes && state.attributes.user_id && !names[state.attributes.user_id]) {
+        names[state.attributes.user_id] = state.attributes.friendly_name || entityId;
+      }
     }
-    
-    let html = '<div class="history-timeline">';
-    taskHistory.forEach(entry => {
-        const dateStr = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Unbekannt';
-        const userName = entry.user_id && this._users ? (this._users[entry.user_id] || entry.user_id) : 'Unbekannt';
-        
-        let title = '';
-        let detailsHtml = '';
-        let icon = '';
-        let color = '';
-        
-        if (entry.action === 'created') {
-            title = 'Aufgabe erstellt';
-            icon = 'mdi:plus-circle';
-            color = 'var(--info-color, #2196f3)';
-        } else if (entry.action === 'edited') {
-            title = 'Aufgabe bearbeitet';
-            icon = 'mdi:text-box-edit-outline';
-            color = 'var(--primary-color, #03a9f4)';
-            
-            const keyMap = {
-                'name': 'Name', 'description': 'Beschreibung', 'area': 'Bereich',
-                'interval': 'Intervall', 'assignees': 'Bearbeiter', 'complexity': 'Punkte',
-                'category': 'Kategorie', 'icon': 'Icon', 'subtasks': 'Unteraufgaben',
-                'images': 'Bilder', 'due_date': 'Fälligkeitsdatum', 'paused_until': 'Pausiert bis',
-                'override_overdue_days': 'Überfälligkeit (Tage)', 'current_assignee': 'Aktueller Bearbeiter'
-            };
-            
-            const changes = entry.details?.changes;
-            if (changes && Object.keys(changes).length > 0) {
-                detailsHtml = '<div style="margin-top: 8px; font-size: 12px; background: rgba(0,0,0,0.1); padding: 6px; border-radius: 4px;">';
-                for (const [key, diff] of Object.entries(changes)) {
-                    const translatedKey = keyMap[key] || key;
-                    if (key === 'subtasks') {
-                        const oldSubtasks = diff.old || [];
-                        const newSubtasks = diff.new || [];
-                        let completedSubtasks = [];
-                        let addedSubtasks = [];
-                        
-                        newSubtasks.forEach(st => {
-                            const oldSt = oldSubtasks.find(o => o.title === st.title);
-                            if (oldSt) {
-                                if (st.done && !oldSt.done) {
-                                    completedSubtasks.push(st.title);
-                                }
-                            } else {
-                                addedSubtasks.push(st.title);
-                            }
-                        });
-                        
-                        if (completedSubtasks.length > 0 || addedSubtasks.length > 0) {
-                            if (completedSubtasks.length > 0) {
-                                completedSubtasks.forEach(stTitle => {
-                                    detailsHtml += `<div style="margin-bottom: 2px; color: var(--success-color, #4caf50);">• <b>Unteraufgabe:</b> <s>${stTitle}</s> abgeschlossen <ha-icon icon="mdi:check-circle" style="--mdc-icon-size: 12px; margin-left: 2px;"></ha-icon></div>`;
-                                });
-                                if (Object.keys(changes).length === 1 && addedSubtasks.length === 0) {
-                                    title = userName !== 'Unbekannt' ? `${userName} hat Unteraufgaben abgeschlossen` : 'Unteraufgaben abgeschlossen';
-                                    icon = 'mdi:check-circle-outline';
-                                    color = 'var(--success-color, #4caf50)';
-                                }
-                            }
-                            if (addedSubtasks.length > 0) {
-                                addedSubtasks.forEach(stTitle => {
-                                    detailsHtml += `<div style="margin-bottom: 2px;">• <b>Unteraufgabe:</b> ${stTitle} hinzugefügt</div>`;
-                                });
-                            }
-                        } else {
-                            detailsHtml += `<div style="margin-bottom: 2px;">• <b>${translatedKey}</b> geändert</div>`;
-                        }
-                    } else if (key === 'images' || key === 'assignees' || key === 'current_assignee') {
-                        detailsHtml += `<div style="margin-bottom: 2px;">• <b>${translatedKey}</b> geändert</div>`;
-                    } else {
-                        const oldVal = diff.old !== null ? String(diff.old) : 'leer';
-                        const newVal = diff.new !== null ? String(diff.new) : 'leer';
-                        detailsHtml += `<div style="margin-bottom: 2px;">• <b>${translatedKey}</b>: <s>${oldVal}</s> → ${newVal}</div>`;
-                    }
-                }
-                detailsHtml += '</div>';
-            }
-        } else if (entry.action === 'completed') {
-            const usersWithPoints = entry.details?.users_with_points;
-            if (usersWithPoints && Object.keys(usersWithPoints).length > 1) {
-                title = 'Aufgabe gemeinsam abgeschlossen';
-                let usersListHtml = '';
-                for (const [uId, pts] of Object.entries(usersWithPoints)) {
-                    const uName = this._users && this._users[uId] ? this._users[uId] : uId;
-                    usersListHtml += `<div style="margin-bottom: 2px;">• <b>${uName}</b>: +${pts} Punkte</div>`;
-                }
-                detailsHtml = `<div style="margin-top: 8px; font-size: 12px; background: rgba(0,0,0,0.1); padding: 6px; border-radius: 4px;">${usersListHtml}</div>`;
-            } else {
-                title = userName !== 'Unbekannt' ? `${userName} hat die Aufgabe abgeschlossen` : 'Aufgabe abgeschlossen';
-                if (entry.details?.points) {
-                    detailsHtml = `<div class="timeline-points" style="color: var(--success-color, #4caf50)">+${entry.details.points} Punkte</div>`;
-                }
-            }
-            icon = 'mdi:check-circle';
-            color = 'var(--success-color, #4caf50)';
-        } else {
-            title = 'Aktion: ' + entry.action;
-            icon = 'mdi:information';
-            color = 'var(--secondary-text-color)';
-        }
-        
-        html += `
-            <div class="timeline-item" style="display: flex; gap: 16px; position: relative; padding-bottom: 16px;">
-                <div class="timeline-marker" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--card-background-color); display: flex; align-items: center; justify-content: center; z-index: 1; background-color: ${color}; flex-shrink: 0;">
-                    <ha-icon icon="${icon}" style="--mdc-icon-size: 16px; color: white;"></ha-icon>
-                </div>
-                <div class="timeline-content" style="flex: 1; min-width: 0;">
-                    <div class="timeline-date" style="font-size: 11px; color: var(--secondary-text-color); margin-bottom: 4px;">${dateStr}${userName !== 'Unbekannt' ? ' • ' + userName : ''}</div>
-                    <div class="timeline-title" style="font-size: 14px; font-weight: 500; color: var(--primary-text-color);">${title}</div>
-                    ${detailsHtml}
-                </div>
-            </div>
-        `;
-    });
-    html += '</div>';
-    container.innerHTML = html;
+    return names;
+  }
+
+  _renderAuditLog(container, taskHistory) {
+    container.innerHTML = renderAuditLogHtml(taskHistory, this._historyUserNames(), (key, replace = null) => this.localize(key, replace), this._hass);
   }
 
   _renderImageGallery() {

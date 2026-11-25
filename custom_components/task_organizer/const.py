@@ -42,6 +42,7 @@ WS_TYPE_EDIT_TEMPLATE = "task_organizer/edit_template"
 WS_TYPE_DELETE_TEMPLATE = "task_organizer/delete_template"
 WS_TYPE_GET_TASK_AUDIT_LOG = "task_organizer/get_task_audit_log"
 WS_TYPE_CLEAR_AUDIT_LOG = "task_organizer/clear_audit_log"
+WS_TYPE_SET_STAND_IN = "task_organizer/set_stand_in"
 
 # Service Names
 SERVICE_RESET_MONTHLY_POINTS = "reset_monthly_points"

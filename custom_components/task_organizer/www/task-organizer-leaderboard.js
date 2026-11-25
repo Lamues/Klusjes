@@ -224,7 +224,9 @@ class TaskOrganizerLeaderboard extends HTMLElement {
       return;
     }
 
-    let sortedUsers = Object.keys(this.points).map(userId => { 
+    // Users excluded in the integration options never take part
+    const excludedUsers = new Set([].concat(this.settings?.excluded_users || []));
+    let sortedUsers = Object.keys(this.points).filter(userId => !excludedUsers.has(userId)).map(userId => { 
       return { 
         id: userId, 
         points: this.points[userId], 

@@ -46,6 +46,7 @@ from .const import (
     WS_TYPE_EDIT_TEMPLATE,
     WS_TYPE_DELETE_TEMPLATE,
     WS_TYPE_CLEAR_AUDIT_LOG,
+    WS_TYPE_SET_STAND_IN,
     SERVICE_ADD_TASK,
     SERVICE_COMPLETE_TASK_BY_NAME,
     SERVICE_RESET_MONTHLY_POINTS,
@@ -68,7 +69,7 @@ from .schedule import (
     first_due_iso,
     normalize_schedule,
 )
-from .exclusions import async_get_excluded_user_ids
+from .exclusions import async_get_excluded_user_ids, get_excluded_user_ids
 
 # Global logger for the integration
 _LOGGER = logging.getLogger(__name__)
@@ -300,6 +301,9 @@ async def _async_complete_task_internal(hass: HomeAssistant, task_id: str, compl
     
     interval = task.get("interval", 7)
 
+    # A one-time stand-in only counts for this completion
+    task.pop("stand_in", None)
+
     # Rotate the responsible assignee (or hold it if someone else did the work)
     if interval > 0:
         if advance_assignee(task, users_with_points, total_points):
@@ -525,6 +529,10 @@ async def ws_edit_task(hass: HomeAssistant, connection: websocket_api.ActiveConn
                 or dt_util.as_utc(dt_util.parse_datetime(custom_due)).isoformat()
             )
         
+    # A one-time stand-in no longer applies when the assignees change
+    if "assignees" in msg and task_ref.get("stand_in") and list(task_ref.get("assignees") or []) != list(original_task.get("assignees") or []):
+        task_ref.pop("stand_in", None)
+
     # Who is responsible right now (only for tasks with several assignees)
     if msg.get("current_assignee"):
         set_current_assignee(task_ref, msg["current_assignee"])
@@ -573,6 +581,41 @@ async def ws_edit_task(hass: HomeAssistant, connection: websocket_api.ActiveConn
     if changed_keys:
         await _log_audit_event(hass, task_id, "edited", user_id=connection.user.id, details={"changes": changed_keys})
         
+    await hass.data[DOMAIN]["store"].async_save(data)
+    hass.bus.async_fire(EVENT_TASK_UPDATED)
+    connection.send_result(msg["id"], {"success": True})
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): WS_TYPE_SET_STAND_IN,
+    vol.Required("task_id"): str,
+    vol.Optional("user_id"): vol.Any(str, None),
+})
+@websocket_api.async_response
+async def ws_set_stand_in(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict):
+    """Let somebody else do a single-assignee task once (None = back to the assignee)."""
+    data = hass.data[DOMAIN]["data"]
+    task = data["tasks"].get(msg["task_id"])
+    if task is None:
+        connection.send_error(msg["id"], "not_found", "Task not found")
+        return
+
+    user_id = msg.get("user_id") or None
+    pool = [u for u in (task.get("assignees") or []) if u]
+    if user_id and (user_id in pool or user_id in get_excluded_user_ids(hass)):
+        user_id = None  # the assignee itself, or somebody who cannot take part
+
+    old = task.get("stand_in")
+    if user_id:
+        task["stand_in"] = user_id
+    else:
+        task.pop("stand_in", None)
+
+    if old != task.get("stand_in"):
+        await _log_audit_event(
+            hass, msg["task_id"], "edited", user_id=connection.user.id,
+            details={"changes": {"stand_in": {"old": old, "new": task.get("stand_in")}}},
+        )
     await hass.data[DOMAIN]["store"].async_save(data)
     hass.bus.async_fire(EVENT_TASK_UPDATED)
     connection.send_result(msg["id"], {"success": True})
@@ -1102,6 +1145,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             data["history"].insert(0, history_entry)
         
         advance_assignee(task, shares, total_points)
+        task.pop("stand_in", None)
 
         interval = task.get("interval", 1)
         task["due_date"] = compute_next_due(task) or (dt_util.utcnow() + timedelta(days=interval)).isoformat()
@@ -1376,6 +1420,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     websocket_api.async_register_command(hass, ws_add_task)
     websocket_api.async_register_command(hass, ws_edit_task)
     websocket_api.async_register_command(hass, ws_delete_task)
+    websocket_api.async_register_command(hass, ws_set_stand_in)
     websocket_api.async_register_command(hass, ws_factory_reset)
     websocket_api.async_register_command(hass, ws_update_settings)
     websocket_api.async_register_command(hass, ws_delete_history_item)

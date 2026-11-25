@@ -1,6 +1,6 @@
 const _v = new URLSearchParams(import.meta.url.split('?')[1]).get('v') || Date.now();
 const { localize, renderCheckbox } = await import(`./utils/i18n.js?v=${_v}`);
-const { getEffectiveAssignees } = await import(`./utils/assignees.js?v=${_v}`);
+const { getEffectiveAssignees, getAssigneePool, getExcludedUserIds, withoutExcludedUsers } = await import(`./utils/assignees.js?v=${_v}`);
 await import(`./modals/choice-modal.js?v=${_v}`);
 await import(`./modals/subtask-modal.js?v=${_v}`);
 await import(`./modals/task-modal.js?v=${_v}`);
@@ -192,11 +192,16 @@ class TaskOrganizerKanban extends HTMLElement {
   _proceedToAssigneeCheck(taskId) {
     const task = this.tasks[taskId];
     const currentUserId = this._hass.user?.id;
-    const assignees = getEffectiveAssignees(task);
+    const excluded = getExcludedUserIds(this.settings);
+    const pool = getAssigneePool(task, this.settings);
+    const assignees = getEffectiveAssignees(task).filter(uid => !excluded.has(uid));
 
     const isOnlyMe = assignees.length === 1 && assignees[0] === currentUserId;
 
-    if (isOnlyMe) {
+    if (pool.length === 1 && assignees.length === 1) {
+      // One person assigned: the points go to that person (or this time's stand-in), whoever ticks it off.
+      this._completeTask(taskId, [assignees[0]], { [assignees[0]]: 100 });
+    } else if (isOnlyMe) {
       this._completeTask(taskId, [currentUserId], { [currentUserId]: 100 });
     } else {
       this.shadowRoot.getElementById('modal-choice').open(taskId, this.tasks[taskId], this.users, this._hass, this.settings);
@@ -457,7 +462,7 @@ class TaskOrganizerKanban extends HTMLElement {
         
         if (this._config?.show_add !== false) {
             this.shadowRoot.getElementById('btn-add-task').addEventListener('click', () => {
-                this.shadowRoot.getElementById('modal-task').open(null, null, this.templates, this.users, this._hass);
+                this.shadowRoot.getElementById('modal-task').open(null, null, this.templates, withoutExcludedUsers(this.users, this.settings), this._hass);
             });
         }
         
@@ -789,7 +794,7 @@ class TaskOrganizerKanban extends HTMLElement {
     this.shadowRoot.querySelectorAll('.btn-edit').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const taskId = e.currentTarget.dataset.id;
-            this.shadowRoot.getElementById('modal-task').open(taskId, this.tasks[taskId], this.templates, this.users, this._hass);
+            this.shadowRoot.getElementById('modal-task').open(taskId, this.tasks[taskId], this.templates, withoutExcludedUsers(this.users, this.settings), this._hass);
         });
     });
     this.shadowRoot.querySelectorAll('.btn-delete').forEach(btn => {
